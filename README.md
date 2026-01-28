@@ -4,54 +4,63 @@ Risk-aware execution layer using Pyth confidence intervals to block or scale tra
 
 ---
 
-## What this is
+## What is CATE?
 
-CATE is a **risk-aware execution engine** for DeFi systems.
+CATE is a system that decides whether a trade should be executed or blocked based on the quality of oracle data.
 
-Instead of blindly trusting oracle prices, CATE evaluates the **statistical quality** of oracle data before allowing any financial action.
-
-It uses:
-- Pyth price feeds
-- Pyth confidence intervals
-- deterministic risk rules
-- cryptographic signing
-- on-chain verification
-
-to answer one fundamental question:
-
-> *Is this price reliable enough to risk real capital?*
+Instead of trusting prices blindly, CATE evaluates how reliable the data is before allowing any financial action.
 
 ---
 
-## What this is NOT
+## What CATE does
 
-This project is NOT:
+- Reads real-time price feeds from Pyth Network  
+- Uses Pyth confidence intervals to measure uncertainty  
+- Applies deterministic risk rules  
+- Generates a signed decision  
+- Verifies the decision on-chain  
+- Allows, scales, or blocks execution  
 
-- a trading bot  
-- a price prediction model  
-- a yield optimizer  
-- a machine learning black box  
-- a price oracle replacement  
+---
+
+## What CATE is not
+
+CATE is not:
+
+- A trading bot  
+- A price prediction model  
+- A yield strategy  
+- A portfolio manager  
+- An AI black box  
 
 CATE does not try to predict markets.  
-CATE only decides **whether a trade should be executed or blocked** based on data reliability.
+CATE only evaluates if the data is safe enough to act on.
 
 ---
 
-## Core concept
+## How it works
 
-Traditional DeFi systems treat oracle data as:
-
-> price = truth
-
-CATE treats oracle data as:
-
-> price = hypothesis  
-> confidence = signal quality
-
-All decisions are made using **price + confidence interval**, not price alone.
+1. Oracle data is fetched from Pyth  
+2. Risk is calculated using price + confidence  
+3. A decision is generated  
+4. The decision is cryptographically signed  
+5. The decision is verified on-chain  
+6. Execution is allowed or blocked  
 
 ---
 
-## Architecture
+## Decision format
 
+Each decision has the following structure:
+
+```ts
+{
+  asset_id: string,
+  price: number,
+  confidence: number,
+  risk_score: number,
+  action: "ALLOW" | "SCALE" | "BLOCK",
+  explanation: string,
+  timestamp: number,
+  signature: string
+}
