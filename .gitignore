@@ -1,0 +1,38 @@
+# ==============================
+# Node / Vite
+# ==============================
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+logs/
+
+# ==============================
+# Env / Secrets
+# ==============================
+.env
+.env.*
+!.env.example
+
+# ==============================
+# OS / Editor
+# ==============================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ==============================
+# Solana / Anchor
+# ==============================
+contracts/target/
+contracts/.anchor/
+contracts/test-ledger/
+contracts/.localnet/
+
+# Never commit wallets / keypairs
+**/*-keypair.json
+**/wallet.json
+**/*.pem
+**/*.key

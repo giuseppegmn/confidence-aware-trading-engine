@@ -1,0 +1,538 @@
+{
+  "address": "77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6",
+  "metadata": {
+    "name": "workspace",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "get_risk_status",
+      "discriminator": [
+        12,
+        9,
+        187,
+        34,
+        222,
+        104,
+        8,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "asset_risk_status",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116,
+                  95,
+                  114,
+                  105,
+                  115,
+                  107
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_asset_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "initialize_config",
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "trusted_signer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_risk_status",
+      "discriminator": [
+        100,
+        13,
+        144,
+        17,
+        97,
+        22,
+        91,
+        35
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_risk_status",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116,
+                  95,
+                  114,
+                  105,
+                  115,
+                  107
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "asset_id",
+          "type": "string"
+        },
+        {
+          "name": "risk_score",
+          "type": "u8"
+        },
+        {
+          "name": "is_blocked",
+          "type": "bool"
+        },
+        {
+          "name": "confidence_ratio",
+          "type": "u64"
+        },
+        {
+          "name": "publisher_count",
+          "type": "u8"
+        },
+        {
+          "name": "decision_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        },
+        {
+          "name": "signer_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_trusted_signer",
+      "discriminator": [
+        205,
+        95,
+        82,
+        90,
+        95,
+        255,
+        163,
+        184
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_signer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "verify_decision",
+      "discriminator": [
+        114,
+        88,
+        104,
+        248,
+        122,
+        238,
+        121,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_asset_id",
+          "type": "string"
+        },
+        {
+          "name": "decision_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signature",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        },
+        {
+          "name": "signer_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AssetRiskStatus",
+      "discriminator": [
+        254,
+        66,
+        102,
+        203,
+        134,
+        113,
+        169,
+        201
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "AssetIdTooLong",
+      "msg": "Asset ID exceeds maximum length of 16 characters"
+    },
+    {
+      "code": 6001,
+      "name": "AssetIdEmpty",
+      "msg": "Asset ID cannot be empty"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidRiskScore",
+      "msg": "Risk score must be between 0 and 100"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidConfidenceRatio",
+      "msg": "Confidence ratio must be between 0 and 10000 basis points"
+    },
+    {
+      "code": 6004,
+      "name": "NotInitialized",
+      "msg": "Program has not been initialized"
+    },
+    {
+      "code": 6005,
+      "name": "Unauthorized",
+      "msg": "Unauthorized: caller is not the authority"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidSigner",
+      "msg": "Invalid signer: does not match trusted signer"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidSignature",
+      "msg": "Invalid Ed25519 signature"
+    },
+    {
+      "code": 6008,
+      "name": "MissingEd25519Instruction",
+      "msg": "Missing Ed25519 verification instruction"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidEd25519Program",
+      "msg": "Invalid Ed25519 program"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidEd25519Data",
+      "msg": "Invalid Ed25519 instruction data"
+    },
+    {
+      "code": 6011,
+      "name": "SignerMismatch",
+      "msg": "Signer pubkey mismatch"
+    },
+    {
+      "code": 6012,
+      "name": "SignatureMismatch",
+      "msg": "Signature mismatch"
+    },
+    {
+      "code": 6013,
+      "name": "MessageMismatch",
+      "msg": "Message hash mismatch"
+    }
+  ],
+  "types": [
+    {
+      "name": "AssetRiskStatus",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "asset_id",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "risk_score",
+            "type": "u8"
+          },
+          {
+            "name": "is_blocked",
+            "type": "bool"
+          },
+          {
+            "name": "last_updated",
+            "type": "i64"
+          },
+          {
+            "name": "confidence_ratio",
+            "type": "u64"
+          },
+          {
+            "name": "publisher_count",
+            "type": "u8"
+          },
+          {
+            "name": "decision_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "signature",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "signer_pubkey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_initialized",
+            "type": "bool"
+          },
+          {
+            "name": "trusted_signer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

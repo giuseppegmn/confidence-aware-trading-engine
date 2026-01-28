@@ -1,0 +1,310 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+  CATE - Confidence-Aware Trading Engine
+  Design System: Dark Terminal Aesthetic
+  Inspired by: Bloomberg Terminal, SpaceX Mission Control
+*/
+
+@layer base {
+  :root {
+    /* Core backgrounds - Deep space black */
+    --background: 228 15% 5%;
+    --foreground: 210 20% 92%;
+
+    /* Card surfaces - Elevated dark panels */
+    --card: 225 15% 8%;
+    --card-foreground: 210 20% 92%;
+
+    /* Popover/Dialog */
+    --popover: 225 15% 10%;
+    --popover-foreground: 210 20% 92%;
+
+    /* Primary - Electric cyan (trust, technology) */
+    --primary: 187 100% 50%;
+    --primary-foreground: 228 15% 5%;
+
+    /* Secondary - Muted steel */
+    --secondary: 220 14% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    /* Muted - Subtle backgrounds */
+    --muted: 220 14% 12%;
+    --muted-foreground: 215 16% 55%;
+
+    /* Accent - Electric cyan glow */
+    --accent: 187 100% 50%;
+    --accent-foreground: 228 15% 5%;
+
+    /* Status colors - Decision states */
+    --status-allow: 152 76% 45%;
+    --status-allow-foreground: 152 76% 95%;
+    --status-scale: 38 92% 50%;
+    --status-scale-foreground: 38 92% 10%;
+    --status-block: 0 72% 55%;
+    --status-block-foreground: 0 72% 95%;
+
+    /* Risk gradient */
+    --risk-low: 152 76% 45%;
+    --risk-medium: 38 92% 50%;
+    --risk-high: 0 72% 55%;
+
+    /* Destructive */
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 72% 95%;
+
+    /* Borders and inputs */
+    --border: 220 14% 18%;
+    --input: 220 14% 15%;
+    --ring: 187 100% 50%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 225 15% 6%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 187 100% 50%;
+    --sidebar-primary-foreground: 228 15% 5%;
+    --sidebar-accent: 220 14% 12%;
+    --sidebar-accent-foreground: 210 20% 92%;
+    --sidebar-border: 220 14% 15%;
+    --sidebar-ring: 187 100% 50%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(187 100% 50%) 0%, hsl(195 100% 45%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(225 15% 8%) 0%, hsl(228 15% 5%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(187 100% 50% / 0.15) 0%, transparent 70%);
+    --gradient-risk-low: linear-gradient(90deg, hsl(152 76% 45%) 0%, hsl(152 76% 55%) 100%);
+    --gradient-risk-medium: linear-gradient(90deg, hsl(38 92% 50%) 0%, hsl(38 92% 60%) 100%);
+    --gradient-risk-high: linear-gradient(90deg, hsl(0 72% 55%) 0%, hsl(0 72% 65%) 100%);
+
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(187 100% 50% / 0.2);
+    --shadow-card: 0 4px 24px hsl(228 15% 2% / 0.5);
+    --shadow-elevated: 0 8px 32px hsl(228 15% 2% / 0.6);
+
+    /* Typography */
+    --font-mono: 'SF Mono', 'Fira Code', 'Monaco', monospace;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* Terminal-style monospace text */
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Status badges */
+  .status-allow {
+    background-color: hsl(var(--status-allow) / 0.15);
+    color: hsl(var(--status-allow));
+    border: 1px solid hsl(var(--status-allow) / 0.3);
+  }
+
+  .status-scale {
+    background-color: hsl(var(--status-scale) / 0.15);
+    color: hsl(var(--status-scale));
+    border: 1px solid hsl(var(--status-scale) / 0.3);
+  }
+
+  .status-block {
+    background-color: hsl(var(--status-block) / 0.15);
+    color: hsl(var(--status-block));
+    border: 1px solid hsl(var(--status-block) / 0.3);
+  }
+
+  /* Glowing card effect */
+  .card-glow {
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .card-glow:hover {
+    box-shadow: var(--shadow-glow);
+    border-color: hsl(var(--primary) / 0.3);
+  }
+
+  /* Data grid styling */
+  .data-cell {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    letter-spacing: 0.025em;
+  }
+
+  /* Pulse animation for live data */
+  .pulse-live {
+    animation: pulse-glow 2s infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  /* Risk meter gradient */
+  .risk-meter {
+    background: linear-gradient(90deg, 
+      hsl(var(--status-allow)) 0%, 
+      hsl(var(--status-scale)) 50%, 
+      hsl(var(--status-block)) 100%
+    );
+  }
+
+  /* Scanline effect for terminal aesthetic */
+  .scanlines::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(var(--background) / 0.03) 2px,
+      hsl(var(--background) / 0.03) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* Wallet button override */
+  .wallet-adapter-button {
+    background: hsl(var(--secondary)) !important;
+    color: hsl(var(--foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: var(--radius) !important;
+    font-family: inherit !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .wallet-adapter-button:hover {
+    background: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  .wallet-adapter-button-trigger {
+    background: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .wallet-adapter-dropdown-list {
+    background: hsl(var(--popover)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: var(--radius) !important;
+  }
+
+  .wallet-adapter-dropdown-list-item {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .wallet-adapter-dropdown-list-item:hover {
+    background: hsl(var(--secondary)) !important;
+  }
+
+  .wallet-adapter-modal-wrapper {
+    background: hsl(var(--background) / 0.95) !important;
+  }
+
+  .wallet-adapter-modal-container {
+    background: hsl(var(--card)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: var(--radius) !important;
+  }
+
+  /* Confidence bar */
+  .confidence-bar {
+    position: relative;
+    height: 4px;
+    background: hsl(var(--muted));
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .confidence-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: var(--gradient-primary);
+    transition: width 0.3s ease;
+  }
+
+  /* Number displays */
+  .number-display {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Grid pattern background */
+  .grid-pattern {
+    background-image: 
+      linear-gradient(hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+@layer utilities {
+  /* Text glow effect */
+  .text-glow {
+    text-shadow: 0 0 10px hsl(var(--primary) / 0.5);
+  }
+
+  /* Border glow */
+  .border-glow {
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.3), 0 0 20px hsl(var(--primary) / 0.1);
+  }
+
+  /* Fade in animation */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Slide in from right */
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}

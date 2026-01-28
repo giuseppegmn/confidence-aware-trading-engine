@@ -1,0 +1,8 @@
+{
+  "program_id": "77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6",
+  "network": "devnet",
+  "signature": "2HpWrErNkDGKVPMVdRs9WeZcAsfb5Jyxyst4mLAqU1Qoa4bfAAto38zMyUL51xhxQ91NTDfARfSNrE4YGagEetrB",
+  "config_address": null,
+  "program_name": "CATE Trust Layer v2",
+  "description": "Solana program for asset risk status management with Ed25519 signature verification"
+}
