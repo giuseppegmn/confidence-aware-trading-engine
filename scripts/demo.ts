@@ -1,10 +1,9 @@
-// ✅ IMPORTANT: this must be first (ESM import order matters)
-import 'dotenv/config';
-
+import dotenv from 'dotenv';
 import crypto from 'crypto';
-import { Buffer } from 'buffer';
 
-import { HermesClient } from '@pythnetwork/hermes-client'; // kept (harmless, not required)
+dotenv.config({ path: '.env' });
+
+import { HermesClient } from '@pythnetwork/hermes-client';
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
 import { SUPPORTED_ASSETS } from '../src/lib/oracle/pythHermes';
 import type { OracleSnapshot, OraclePrice, OracleMetrics } from '../src/lib/oracle/types';
@@ -38,8 +37,7 @@ function buildSnapshot(params: {
     sequence: 1,
   };
 
-  const confidenceRatio =
-    params.price === 0 ? 999 : (params.confidence / Math.abs(params.price)) * 100;
+  const confidenceRatio = params.price === 0 ? 999 : (params.confidence / Math.abs(params.price)) * 100;
 
   const metrics: OracleMetrics = {
     confidenceRatio,
@@ -75,10 +73,7 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
 
   const url = `${base}/v2/updates/price/latest?ids%5B%5D=${encodeURIComponent(id0x)}`;
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-  });
+  const res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -89,11 +84,7 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const parsed = body?.parsed?.[0];
   const priceObj = parsed?.price;
 
-  if (!priceObj) {
-    // keep debug small but useful
-    const preview = JSON.stringify(body)?.slice(0, 400) ?? '';
-    throw new Error(`No parsed price found in Hermes response for id=${id0x}. body=${preview}`);
-  }
+  if (!priceObj) throw new Error(`No parsed price found in Hermes response for id=${id0x}`);
 
   const expo = Number(priceObj.expo);
   const price = Number(priceObj.price) * Math.pow(10, expo);
@@ -117,30 +108,19 @@ function getSignerFromEnv(): { signer: SigningEngine; source: string; fp?: strin
   const b58 = process.env.CATE_TRUSTED_SIGNER_SECRET?.trim();
 
   if (b64 && b58) {
-    throw new Error(
-      'Set only ONE: CATE_TRUSTED_SIGNER_SECRET_B64 or CATE_TRUSTED_SIGNER_SECRET (base58). Not both.'
-    );
+    throw new Error('Set only ONE: CATE_TRUSTED_SIGNER_SECRET_B64 or CATE_TRUSTED_SIGNER_SECRET (base58). Not both.');
   }
 
-  if (b64) {
-    const signer = new SigningEngine(`b64:${b64}`);
-    return { signer, source: 'env:B64', fp: fingerprintB64(b64) };
-  }
+  if (b64) return { signer: new SigningEngine(`b64:${b64}`), source: 'env:B64', fp: fingerprintB64(b64) };
+  if (b58) return { signer: new SigningEngine(b58), source: 'env:BASE58' };
 
-  if (b58) {
-    const signer = new SigningEngine(b58);
-    return { signer, source: 'env:BASE58' };
-  }
-
-  // No silent fallback: you WANT stability
-  throw new Error(
-    'Missing signer key. Set CATE_TRUSTED_SIGNER_SECRET_B64 (base64) OR CATE_TRUSTED_SIGNER_SECRET (base58) in .env.'
-  );
+  throw new Error('Missing signer key. Set CATE_TRUSTED_SIGNER_SECRET_B64 OR CATE_TRUSTED_SIGNER_SECRET in .env.');
 }
 
 async function main() {
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
 
+  // kept (harmless, not required)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const client = new HermesClient(endpoint);
 
@@ -168,6 +148,8 @@ async function main() {
   const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
   const decision = engine.evaluate(snapshot);
 
+  // note: engine.evaluate already signs internally via getSigningEngine()
+  // but this demo signs again explicitly to show signature flow (optional)
   const signed = signer.sign(
     snapshot.price.assetId,
     snapshot.price.price,
