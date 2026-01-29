@@ -1,7 +1,8 @@
-import dotenv from 'dotenv';
-import crypto from 'crypto';
+// ✅ IMPORTANT: this must be first (ESM import order matters)
+import 'dotenv/config';
 
-dotenv.config({ path: '.env' });
+import crypto from 'crypto';
+import { Buffer } from 'buffer';
 
 import { HermesClient } from '@pythnetwork/hermes-client'; // kept (harmless, not required)
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
@@ -37,7 +38,8 @@ function buildSnapshot(params: {
     sequence: 1,
   };
 
-  const confidenceRatio = params.price === 0 ? 999 : (params.confidence / Math.abs(params.price)) * 100;
+  const confidenceRatio =
+    params.price === 0 ? 999 : (params.confidence / Math.abs(params.price)) * 100;
 
   const metrics: OracleMetrics = {
     confidenceRatio,
@@ -73,7 +75,10 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
 
   const url = `${base}/v2/updates/price/latest?ids%5B%5D=${encodeURIComponent(id0x)}`;
 
-  const res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -85,7 +90,9 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const priceObj = parsed?.price;
 
   if (!priceObj) {
-    throw new Error(`No parsed price found in Hermes response for id=${id0x}`);
+    // keep debug small but useful
+    const preview = JSON.stringify(body)?.slice(0, 400) ?? '';
+    throw new Error(`No parsed price found in Hermes response for id=${id0x}. body=${preview}`);
   }
 
   const expo = Number(priceObj.expo);
@@ -125,7 +132,7 @@ function getSignerFromEnv(): { signer: SigningEngine; source: string; fp?: strin
     return { signer, source: 'env:BASE58' };
   }
 
-  // If nothing provided, this will generate ephemeral keys — not what you want for “stable signer”.
+  // No silent fallback: you WANT stability
   throw new Error(
     'Missing signer key. Set CATE_TRUSTED_SIGNER_SECRET_B64 (base64) OR CATE_TRUSTED_SIGNER_SECRET (base58) in .env.'
   );
