@@ -3,13 +3,13 @@
  * Conecta à Pyth Network via API Hermes real
  */
 
-// Feed IDs reais da Pyth (mainnet)
+// Feed IDs em formato hexadecimal (64 caracteres) para API Hermes
 const FEEDS = {
-  SOL: 'H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG',
-  BTC: 'GVXRSBjFk6e6J3NbVPXohDJetcTjaeeuykUpbQF8UoMU',
-  ETH: 'JBu1AL4obBcCMqKBBxhpWCNUt136ijcuMZLFvTP7iWdB',
-  JUP: 'g6eRCbboSwK4tSWngn773RCMexr1APQr4uA9bGZBYfo',
-  BONK: '8ihFLu5FimgTQ1Unh4dVyEHUGodJ5gJQCrQf4KUVB9bN',
+  SOL: '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
+  BTC: '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
+  ETH: '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
+  JUP: '0x0a0408d619e9380abad35060f9192039ed5042fa6f82301d0e48bb52be830996',
+  BONK: '0x72b021217ca3fe68922a19aaf50910e480c102c47971c6d7748c09457b62d485',
 } as const;
 
 type AssetSymbol = keyof typeof FEEDS;
@@ -22,68 +22,40 @@ interface PriceData {
 }
 
 class PythOracleReal {
-  private feedIds: string[];
-
-  constructor() {
-    this.feedIds = Object.values(FEEDS);
-  }
-
-  async getAllPrices(): Promise<Record<AssetSymbol, PriceData>> {
-    try {
-      console.log('[Oracle] Fetching real Pyth data...');
-      
-      // Construir URL sem codificar os colchetes (importante!)
-      const queryString = this.feedIds.map(id => 'ids[]=' + id).join('&');
-      const url = 'https://hermes.pyth.network/v2/updates/price/latest?' + queryString;
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const updates = data.parsed || [];
-
-      const result = {} as Record<AssetSymbol, PriceData>;
-
-      for (const update of updates) {
-        const symbol = this.getSymbolByFeedId(update.id) as AssetSymbol;
-        
-        if (symbol && update.price) {
-          const price = this.applyExponent(update.price.price, update.price.expo);
-          const confidence = this.applyExponent(update.price.conf, update.price.expo);
-
-          result[symbol] = {
-            symbol,
-            price,
-            confidence,
-            publishTime: update.price.publish_time,
-          };
-        }
-      }
-
-      console.log(`[Oracle] Fetched ${Object.keys(result).length} assets`);
-      return result;
-
-    } catch (error) {
-      console.error('[Oracle] Failed to fetch Pyth data:', error);
-      throw new Error('Oracle connection failed');
-    }
-  }
-
   async getPrice(symbol: AssetSymbol): Promise<PriceData> {
-    const prices = await this.getAllPrices();
-    const price = prices[symbol];
-    if (!price) throw new Error(`Price not available for ${symbol}`);
-    return price;
-  }
-
-  private applyExponent(value: string, expo: number): number {
-    return Number(value) * Math.pow(10, expo);
-  }
-
-  private getSymbolByFeedId(feedId: string): string | undefined {
-    return Object.entries(FEEDS).find(([_, id]) => id === feedId)?.[0];
+    console.log(`[Oracle] Fetching ${symbol} from Pyth...`);
+    
+    const feedId = FEEDS[symbol];
+    
+    // Usar endpoint correto da API Hermes
+    const url = `https://hermes.pyth.network/api/latest_price_feeds?ids[]=${feedId}`;
+    
+    console.log('[Oracle] URL:', url);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const feed = data[0];
+    
+    if (!feed || !feed.price) {
+      throw new Error('No price data received');
+    }
+    
+    const price = Number(feed.price.price) * Math.pow(10, feed.price.expo);
+    const confidence = Number(feed.price.conf) * Math.pow(10, feed.price.expo);
+    
+    console.log(`[Oracle] ${symbol}: $${price.toFixed(2)} | Confidence: ${confidence.toFixed(4)}`);
+    
+    return {
+      symbol,
+      price,
+      confidence,
+      publishTime: feed.price.publish_time,
+    };
   }
 }
 
