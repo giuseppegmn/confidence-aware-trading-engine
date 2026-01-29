@@ -10,6 +10,7 @@
 
 import nacl from 'tweetnacl';
 import bs58Import from 'bs58';
+import { Buffer } from 'buffer';
 
 // Normalize bs58 for ESM/CJS interop (bs58 may export { default })
 const bs58: any = (bs58Import as any).default ?? (bs58Import as any);
@@ -351,14 +352,17 @@ export function getSigningEngine(): SigningEngine {
   let secret: string | undefined;
 
   // Node env
-  if (typeof process !== 'undefined' && (process as any).env) {
-    const env = (process as any).env;
-    secret = env.CATE_TRUSTED_SIGNER_SECRET;
+  try {
+    const env = (globalThis as any)?.process?.env;
+    if (env) {
+      secret = env.CATE_TRUSTED_SIGNER_SECRET;
 
-    if (!secret && env.CATE_TRUSTED_SIGNER_SECRET_B64) {
-      // pass as "b64:<...>" so loadKeyPair can decode
-      secret = `b64:${env.CATE_TRUSTED_SIGNER_SECRET_B64}`;
+      if (!secret && env.CATE_TRUSTED_SIGNER_SECRET_B64) {
+        secret = `b64:${env.CATE_TRUSTED_SIGNER_SECRET_B64}`;
+      }
     }
+  } catch {
+    // ignore
   }
 
   // Browser localStorage
