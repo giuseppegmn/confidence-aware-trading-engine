@@ -67,14 +67,32 @@ async function main() {
   console.log(`\n[CATE demo] Hermes endpoint: ${endpoint}`);
   console.log(`[CATE demo] Asset: ${asset.id} (${asset.pythFeedId})`);
 
-  // Hermes v2 client: use getPriceFeeds (NOT getLatestPriceFeeds)
-  const feeds = await client.getPriceFeeds({ ids: [asset.pythFeedId] });
-  console.log("[DEBUG] feeds:", JSON.stringify(feeds, null, 2));
-  const feed = feeds?.[0];
+  // Try feed id as-is and with 0x prefix (Hermes clients can differ on expected format)
+const idRaw = asset.pythFeedId;
+const id0x = idRaw.startsWith('0x') ? idRaw : `0x${idRaw}`;
 
-  if (!feed?.price) {
-    throw new Error(`No price data returned from Hermes for feedId=${asset.pythFeedId}`);
-  }
+async function fetchFeed(id: string) {
+  const feeds = await client.getPriceFeeds({ ids: [id] });
+  console.log(`[DEBUG] getPriceFeeds ids[0]=${id}`);
+  console.log(`[DEBUG] feeds length: ${feeds?.length ?? 0}`);
+  console.log(`[DEBUG] feeds:`, JSON.stringify(feeds, null, 2));
+  return feeds?.[0];
+}
+
+let feed = await fetchFeed(idRaw);
+
+if (!feed?.price) {
+  console.log('[DEBUG] No price with raw id, trying 0x-prefixed id...');
+  feed = await fetchFeed(id0x);
+}
+
+if (!feed?.price) {
+  throw new Error(
+    `No price data returned from Hermes. Tried ids: ${idRaw} and ${id0x}. ` +
+    `Check feed id format or use latest price updates endpoint.`
+  );
+}
+
 
   const expo = feed.price.expo;
   const px = Number(feed.price.price) * Math.pow(10, expo);
