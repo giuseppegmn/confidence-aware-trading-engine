@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    build: ./api-server
+    environment:
+      - NODE_ENV=production
+      - AWS_REGION=${AWS_REGION}
+      - AWS_KMS_KEY_ID=${AWS_KMS_KEY_ID}
+      # NUNCA passe SIGNING_PRIVATE_KEY aqui em produção
+    ports:
+      - "3001:3001"
+    networks:
+      - cate-network
+    # Security hardening
+    read_only: true
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+  frontend:
+    build: .
+    environment:
+      - VITE_API_URL=https://api.cate.example.com
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - cate-network
+
+networks:
+  cate-network:
+    driver: bridge
