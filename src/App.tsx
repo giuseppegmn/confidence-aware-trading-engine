@@ -11,12 +11,12 @@ function App() {
       setResult(res)
       
       if (res.blocked) {
-        alert(`🚫 BLOCKED!\n\nRisco: ${res.decision.score}/100\nVolatilidade: ${res.decision.volatility}%\n\n${res.decision.explanation.substring(0, 80)}...`)
+        alert(`🚫 BLOCKED!\n\nRisk: ${res.decision.score}/100\nVolatility: ${res.decision.volatility}%\n\n${res.decision.explanation.substring(0, 80)}...`)
       } else {
         alert(`✅ ${res.decision.action}!\n\nSize: ${(res.decision.sizeMultiplier * 100).toFixed(0)}%\nVol: ${res.decision.volatility}%\nRisk: ${res.decision.score}/100`)
       }
     } catch (err) {
-      alert('❌ Erro: ' + err.message)
+      alert('❌ Error: ' + err.message)
     }
   }
 
@@ -34,11 +34,11 @@ function App() {
       
       {/* Status */}
       <div style={{marginBottom: 20, padding: 15, background: '#f5f5f5', borderRadius: 8}}>
-        <h3 style={{marginTop: 0}}>Status do Sistema</h3>
+        <h3 style={{marginTop: 0}}>System Status</h3>
         <p>
           <strong>Engine:</strong>{' '}
           <span style={{color: isRunning ? 'green' : 'red', fontWeight: 'bold'}}>
-            {isLoading ? '⏳...' : isRunning ? '🟢 RODANDO' : '🔴 PARADO'}
+            {isLoading ? '⏳ STARTING...' : isRunning ? '🟢 RUNNING' : '🔴 STOPPED'}
           </span>
         </p>
         <p><strong>Circuit:</strong> <span style={{color: 'green'}}>CLOSED</span></p>
@@ -61,16 +61,16 @@ function App() {
             cursor: isLoading ? 'not-allowed' : 'pointer'
           }}
         >
-          {isLoading ? '⏳...' : isRunning ? '⏹️ PARAR' : '▶️ INICIAR'}
+          {isLoading ? '⏳...' : isRunning ? '⏹️ STOP' : '▶️ START'}
         </button>
       </div>
 
       {/* Demo Area */}
       {isRunning && (
         <div style={{padding: 20, background: '#e3f2fd', borderRadius: 8, border: '2px solid #2196F3'}}>
-          <h3 style={{marginTop: 0, color: '#1976d2'}}>⚡ Risk Engine Avançado</h3>
+          <h3 style={{marginTop: 0, color: '#1976d2'}}>⚡ Advanced Risk Engine</h3>
           <p style={{fontSize: '14px'}}>
-            Agora com <strong>volatilidade</strong> + <strong>confidence ratio</strong> + <strong>size multiplier</strong>
+            Now with <strong>volatility</strong> + <strong>confidence ratio</strong> + <strong>size multiplier</strong>
           </p>
 
           <button 
@@ -86,7 +86,7 @@ function App() {
               fontWeight: 'bold'
             }}
           >
-            🎲 SIMULAR DECISÃO (COM VOL)
+            🎲 SIMULATE RISK DECISION
           </button>
 
           {/* Result Card */}
@@ -111,7 +111,7 @@ function App() {
                 </div>
                 
                 <div>
-                  <strong>Volatilidade</strong>
+                  <strong>Volatility</strong>
                   <div style={{fontSize: '22px', fontWeight: 'bold', color: lastDecision.volatility > 2 ? 'orange' : 'green'}}>
                     {lastDecision.volatility.toFixed(2)}%
                   </div>
@@ -135,11 +135,11 @@ function App() {
 
       {/* Legend */}
       <div style={{marginTop: 30, padding: 15, background: '#fafafa', borderRadius: 8, fontSize: '12px'}}>
-        <h4>📊 Métricas do Risk Engine</h4>
+        <h4>📊 Risk Engine Metrics</h4>
         <ul style={{paddingLeft: 20, lineHeight: '1.8'}}>
-          <li><strong>Confidence Ratio:</strong> Qualidade do dado Pyth (menor = melhor)</li>
-          <li><strong>Volatilidade:</strong> Desvio padrão dos últimos 20 preços</li>
-          <li><strong>Size Multiplier:</strong> Quanto da posição executar (0-100%)</li>
+          <li><strong>Confidence Ratio:</strong> Pyth data quality (lower = better)</li>
+          <li><strong>Volatility:</strong> Standard deviation of last 20 prices</li>
+          <li><strong>Size Multiplier:</strong> Position size to execute (0-100%)</li>
         </ul>
       </div>
     </div>
