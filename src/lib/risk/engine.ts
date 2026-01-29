@@ -249,7 +249,9 @@ function evaluateVolatilitySpike(metrics: OracleMetrics, params: RiskParameters)
   if (triggered) {
     impact = -30;
     severity = 'CRITICAL';
-    description = `Volatility spike: realized/expected ${ratio.toFixed(2)}x while confidence degraded. MARKET STRESS.`;
+    description = `Volatility spike: realized/expected ${ratio.toFixed(
+      2
+    )}x while confidence degraded. MARKET STRESS.`;
   } else if (ratio > params.volatilitySpikeThreshold) {
     impact = -10;
     severity = 'WARNING';
@@ -312,9 +314,7 @@ function calculateSizeMultiplier(factors: RiskFactor[], params: RiskParameters, 
   if (metrics.confidenceRatio > params.maxConfidenceRatioScale) {
     const scaleFactor = Math.max(
       0.1,
-      1 -
-        (metrics.confidenceRatio - params.maxConfidenceRatioScale) /
-          (params.maxConfidenceRatioBlock - params.maxConfidenceRatioScale)
+      1 - (metrics.confidenceRatio - params.maxConfidenceRatioScale) / (params.maxConfidenceRatioBlock - params.maxConfidenceRatioScale)
     );
     multiplier *= scaleFactor;
   }
@@ -400,7 +400,6 @@ export class RiskEngine {
     ];
 
     const hasBlocker = factors.some((f) => f.triggered);
-
     const riskScore = calculateRiskScore(factors);
     const sizeMultiplier = hasBlocker ? 0 : calculateSizeMultiplier(factors, this.parameters, metrics);
 
@@ -411,10 +410,10 @@ export class RiskEngine {
 
     const explanation = generateExplanation(action, factors, riskScore, sizeMultiplier);
 
-    // ✅ Important: no import-time singleton. Resolve signer lazily at runtime.
-    const signingEngine = getSigningEngine();
+    // ✅ IMPORTANT: lazy signer, no import side-effect
+    const signer = getSigningEngine();
 
-    const signedDecision = signingEngine.sign(
+    const signedDecision = signer.sign(
       snapshot.price.assetId,
       snapshot.price.price,
       snapshot.price.confidence,
@@ -458,17 +457,9 @@ export class RiskEngine {
     return this.decisionHistory.slice(-count);
   }
 
-  clearHistory(): void {
-    this.decisionHistory = [];
-  }
-
   getSignerPublicKey(): string {
     return getSigningEngine().getPublicKey();
   }
 }
-
-// ============================================
-// SINGLETON INSTANCE
-// ============================================
 
 export const riskEngine = new RiskEngine();
