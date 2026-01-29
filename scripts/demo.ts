@@ -71,11 +71,8 @@ async function main() {
   // This returns feed objects that include a `price` field compatible with your existing logic.
   const feeds = await client.getPriceFeeds({ ids: [asset.pythFeedId] });
   const feed = feeds?.[0];
+  if (!feed?.price) throw new Error('No price data returned from Hermes');
 
-  if (!feed?.price) {
-    throw new Error(
-      `No price data returned from Hermes for feedId=${asset.pythFeedId}. ` +
-      `Check the feed id format and Hermes endpoint.`
     );
   }
 
