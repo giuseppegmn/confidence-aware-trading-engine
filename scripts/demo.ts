@@ -1,11 +1,14 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
+import crypto from 'crypto';
+
 dotenv.config({ path: '.env' });
 
 import { HermesClient } from '@pythnetwork/hermes-client'; // kept (not required anymore, but harmless)
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
 import { SUPPORTED_ASSETS } from '../src/lib/oracle/pythHermes';
 import type { OracleSnapshot, OraclePrice, OracleMetrics } from '../src/lib/oracle/types';
-import { verifySignedDecision, getSigningEngine } from '../src/lib/crypto/signing';
+import { verifySignedDecision, SigningEngine } from '../src/lib/crypto/signing';
 
 function fmt(n: number) {
   return Number.isFinite(n) ? n.toFixed(6) : String(n);
@@ -95,20 +98,35 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const confidence = Number(priceObj.conf) * Math.pow(10, expo);
   const publishTime = Number(priceObj.publish_time);
 
-  if (
-    !Number.isFinite(price) ||
-    !Number.isFinite(confidence) ||
-    !Number.isFinite(expo) ||
-    !Number.isFinite(publishTime)
-  ) {
-    console.log('[DEBUG] priceObj:', JSON.stringify(priceObj, null, 2));
-    throw new Error(`Invalid numeric fields in Hermes price object for id=${id0x}`);
-  }
-
   return { expo, price, confidence, publishTime, id0x };
 }
 
+function secretFingerprint(b64: string) {
+  const buf = Buffer.from(b64, 'base64');
+  // fingerprint only (doesn't reveal key)
+  return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+}
+
 async function main() {
+  // --- hard diagnostics ---
+  const cwd = process.cwd();
+  const envExists = fs.existsSync('.env');
+  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64;
+
+  console.log('\n=== ENV DIAGNOSTICS ===');
+  console.log('CWD:', cwd);
+  console.log('.env exists:', envExists);
+  console.log('B64 present:', !!b64);
+  console.log('B64 length:', b64 ? b64.length : 0);
+  console.log('B64 fingerprint:', b64 ? secretFingerprint(b64) : 'N/A');
+
+  if (!b64) {
+    throw new Error('Missing CATE_TRUSTED_SIGNER_SECRET_B64 in .env');
+  }
+
+  // use b64 directly (signing.ts supports "b64:<...>")
+  const signer = new SigningEngine(`b64:${b64}`);
+
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -134,11 +152,6 @@ async function main() {
     exponent: latest.expo,
   });
 
-  // ✅ Deterministic signer via env:
-  // - CATE_TRUSTED_SIGNER_SECRET (base58) OR
-  // - CATE_TRUSTED_SIGNER_SECRET_B64 (base64)
-  const signer = getSigningEngine();
-
   const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
   const decision = engine.evaluate(snapshot);
 
@@ -153,18 +166,6 @@ async function main() {
   );
 
   const verification = verifySignedDecision(signed);
-
-  console.log('\n=== ORACLE ===');
-  console.log(`feedId:     ${snapshot.price.feedId}`);
-  console.log(`price:      ${fmt(snapshot.price.price)}`);
-  console.log(`confidence: ${fmt(snapshot.price.confidence)} (±)`);
-  console.log(`ratio:      ${fmt(snapshot.metrics.confidenceRatio)}%`);
-  console.log(`publishTime:${snapshot.price.publishTime}`);
-
-  console.log('\n=== DECISION ===');
-  console.log(`action:         ${decision.action}`);
-  console.log(`riskScore:       ${decision.riskScore.toFixed(0)}/100`);
-  console.log(`sizeMultiplier:  ${(decision.sizeMultiplier * 100).toFixed(0)}%`);
 
   console.log('\n=== SIGNATURE ===');
   console.log(`signer:   ${signed.signerPublicKey}`);
