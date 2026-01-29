@@ -370,7 +370,7 @@ export function getSigningEngine(): SigningEngine {
     secret = localStorage.getItem('CATE_ENGINE_KEY') || undefined;
   }
 
-  _signingEngine = new SigningEngine();
+  _signingEngine = new SigningEngine(secret);
 
   // Persist only in browser
   if (typeof window !== 'undefined') {
