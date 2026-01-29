@@ -18,7 +18,7 @@ import type {
   RiskDecision,
 } from './types';
 import { riskEngine } from './riskIntelligence';
-import { pythOracle } from './oracleReal';
+import { oracleService } from './oracleIngestion';
 
 // ============================================
 // EXECUTION ID GENERATION

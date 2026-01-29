@@ -9,7 +9,7 @@ import type { ExecutionResult } from './execution/jupiter';
 import type { CircuitStatus } from './failsafe/circuitBreaker';
 import { PublicKey } from '@solana/web3.js';
 
-import { pythOracle } from './oracleReal';
+import { pythHermesService } from './oracle/pythHermes';
 import { riskEngine } from './risk/engine';
 import { jupiterExecutionEngine } from './execution/jupiter';
 import { circuitBreaker } from './failsafe/circuitBreaker';

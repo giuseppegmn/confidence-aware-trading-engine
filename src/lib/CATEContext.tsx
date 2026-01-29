@@ -1,6 +1,7 @@
-﻿import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { requestRemoteSigning } from './crypto/signing'
 import { riskEngine } from './riskIntelligence'
+import { pythOracle } from './oracleReal'
 
 const CATEContext = createContext(null)
 
@@ -10,7 +11,7 @@ export function useCATE() {
   return context
 }
 
-// Simulador de volatilidade - mantém histórico entre chamadas
+// Simulador de volatilidade - mant�m hist�rico entre chamadas
 function createVolatilityTracker() {
   const prices = []
   const maxHistory = 20
@@ -71,26 +72,26 @@ export function CATEProvider({ children }) {
     setIsRunning(false)
     if (intervalRef.current) clearInterval(intervalRef.current)
     setLastDecision(null)
-    // Não reseta o volTracker para manter histórico
+    // N�o reseta o volTracker para manter hist�rico
   }, [])
 
   const evaluateAndSign = useCallback(async (assetId = 'SOL/USD') => {
     try {
-      // Gera preço com variação realista
-      const basePrice = 100
-      const variation = (Math.random() - 0.5) * 8 // ±4% de variação
-      const price = Math.max(80, basePrice + variation)
+       // Busca dados REAIS da Pyth Network
+      console.log('[CATE] Fetching real Pyth data...')
+      const priceData = await pythOracle.getPrice('SOL')
+      
+      const price = priceData.price
       
       // Adiciona ao tracker (persistente!)
       volTrackerRef.current.addPrice(price)
       const volatility = volTrackerRef.current.getVolatility()
       const count = volTrackerRef.current.getCount()
       
-      // Confidence aleatório
-      const confidenceRatio = 0.5 + Math.random() * 3
+      // Confidence aleat�rio
+      const confidenceRatio = (priceData.confidence / priceData.price) * 100
       
-      console.log(`[Vol] Preço: ${price.toFixed(2)} | Histórico: ${count} | Vol: ${volatility}%`)
-
+            console.log(`[CATE] Pyth Real - SOL: $${price.toFixed(2)} | Confidence: ${confidenceRatio.toFixed(2)}%`)
       const snapshot = {
         price: {
           id: assetId,
@@ -124,7 +125,7 @@ export function CATEProvider({ children }) {
       return { signed, decision }
 
     } catch (error) {
-      console.error('❌ Erro:', error)
+      console.error('? Erro:', error)
       throw error
     }
   }, [])

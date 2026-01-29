@@ -5,7 +5,7 @@
  */
 
 // Program ID for CATE Trust Layer (deployed on devnet)
-export const PROGRAM_ID = '77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6';
+export const PROGRAM_ID = '2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3';
 
 // Network configuration
 export const NETWORK = 'devnet';

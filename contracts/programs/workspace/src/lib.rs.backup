@@ -151,7 +151,7 @@ pub mod workspace {
 
     pub fn get_risk_status(ctx: Context<GetRiskStatus>, _asset_id: String) -> Result<AssetRiskStatus> {
         let asset_risk = &ctx.accounts.asset_risk_status;
-        Ok(asset_risk.clone().into_inner())
+        Ok(asset_risk.clone())
     }
 }
 
@@ -341,7 +341,7 @@ impl Config {
 }
 
 #[account]
-
+#[derive(Clone)] // Adicionado para retornar em get_risk_status
 pub struct AssetRiskStatus {
     pub bump: u8,
     pub asset_id: [u8; 16],
