@@ -4,24 +4,29 @@ use anchor_lang::solana_program::sysvar::instructions::{self, load_instruction_a
 
 declare_id!("77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6");
 
+/// Headers da instrução Ed25519
+const ED25519_SIG_LEN: usize = 64;
+const ED25519_PUBKEY_LEN: usize = 32;
+const ED25519_INSTRUCTION_LEN: usize = 2; // num_signatures + padding
+const SIGNATURE_OFFSETS_LEN: usize = 14; // 7 campos de u16 = 14 bytes
+
 #[program]
 pub mod workspace {
     use super::*;
 
-    // trusted_signer: Pubkey, The CATE engine's public key allowed to sign decisions, 9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin
     pub fn initialize_config(ctx: Context<InitializeConfig>, trusted_signer: Pubkey) -> Result<()> {
         let config = &mut ctx.accounts.config;
         config.bump = ctx.bumps.config;
         config.authority = ctx.accounts.authority.key();
         config.is_initialized = true;
         config.trusted_signer = trusted_signer;
+        config.nonce = 0; // Inicializa nonce para replay protection
         
         msg!("CATE Trust Layer v2 initialized with authority: {}, trusted_signer: {}", 
             config.authority, config.trusted_signer);
         Ok(())
     }
 
-    // new_signer: Pubkey, New trusted signer public key, 8xY3pLm9N2kQr4tVbW5cH6jF1dS9uE7vA2mK3nP4xRqJ
     pub fn update_trusted_signer(ctx: Context<UpdateTrustedSigner>, new_signer: Pubkey) -> Result<()> {
         let config = &mut ctx.accounts.config;
         let old_signer = config.trusted_signer;
@@ -31,14 +36,6 @@ pub mod workspace {
         Ok(())
     }
 
-    // asset_id: String, Asset identifier (max 16 chars), SOL/USD
-    // risk_score: u8, Risk score 0-100 (higher = riskier), 25
-    // is_blocked: bool, Whether trading is blocked, false
-    // confidence_ratio: u64, Confidence ratio in basis points (100 = 1%), 9500
-    // publisher_count: u8, Number of publishers providing data, 5
-    // decision_hash: [u8; 32], Hash of the off-chain decision, [0u8; 32]
-    // signature: [u8; 64], Ed25519 signature of decision_hash, [0u8; 64]
-    // signer_pubkey: [u8; 32], Public key that signed the decision, [0u8; 32]
     pub fn update_risk_status(
         ctx: Context<UpdateRiskStatus>,
         asset_id: String,
@@ -46,21 +43,25 @@ pub mod workspace {
         is_blocked: bool,
         confidence_ratio: u64,
         publisher_count: u8,
+        timestamp: i64, // NOVO: Previne replay attacks
         decision_hash: [u8; 32],
         signature: [u8; 64],
         signer_pubkey: [u8; 32],
     ) -> Result<()> {
-        // Validate asset_id length
+        // Validations básicas
         require!(asset_id.len() <= 16, ErrorCode::AssetIdTooLong);
-        require!(asset_id.len() > 0, ErrorCode::AssetIdEmpty);
-        
-        // Validate risk_score range
+        require!(!asset_id.is_empty(), ErrorCode::AssetIdEmpty);
         require!(risk_score <= 100, ErrorCode::InvalidRiskScore);
-        
-        // Validate confidence_ratio (max 10000 basis points = 100%)
         require!(confidence_ratio <= 10000, ErrorCode::InvalidConfidenceRatio);
         
-        // Verify signer_pubkey matches config.trusted_signer
+        // Verifica timestamp (evita assinaturas muito antigas)
+        let current_time = Clock::get()?.unix_timestamp;
+        require!(
+            timestamp >= current_time - 300 && timestamp <= current_time + 60,
+            ErrorCode::InvalidTimestamp
+        );
+
+        // Verifica signer
         let config = &ctx.accounts.config;
         let signer_pubkey_key = Pubkey::new_from_array(signer_pubkey);
         require!(
@@ -68,210 +69,262 @@ pub mod workspace {
             ErrorCode::InvalidSigner
         );
         
-        // Verify Ed25519 signature
-        verify_ed25519_signature(
+        // Verifica Ed25519 de forma SEGURA via CPI check
+        // A instrução Ed25519 deve estar em current_index - 1
+        verify_ed25519_instruction(
+            &ctx.accounts.instructions_sysvar,
+            &signer_pubkey,
+            &decision_hash,
+            &signature,
+        )?;
+
+        // Replay protection: verifica se este hash já foi usado
+        require!(
+            !ctx.accounts.used_decisions.is_used(decision_hash),
+            ErrorCode::DecisionAlreadyUsed
+        );
+        
+        // Marca como usado
+        ctx.accounts.used_decisions.mark_used(decision_hash, timestamp)?;
+
+        let asset_risk = &mut ctx.accounts.asset_risk_status;
+        
+        // Asset ID com padding seguro
+        let mut asset_id_bytes = [0u8; 16];
+        let bytes = asset_id.as_bytes();
+        asset_id_bytes[..bytes.len().min(16)].copy_from_slice(&bytes[..bytes.len().min(16)]);
+        asset_risk.asset_id = asset_id_bytes;
+        
+        asset_risk.bump = ctx.bumps.asset_risk_status;
+        asset_risk.risk_score = risk_score;
+        asset_risk.is_blocked = is_blocked;
+        asset_risk.last_updated = current_time;
+        asset_risk.confidence_ratio = confidence_ratio;
+        asset_risk.publisher_count = publisher_count;
+        asset_risk.timestamp = timestamp; // Armazena para auditoria
+        
+        asset_risk.decision_hash = decision_hash;
+        asset_risk.signature = signature;
+        asset_risk.signer_pubkey = signer_pubkey;
+        
+        msg!(
+            "Updated risk status for {}: score={}, blocked={}, confidence={}bps, publishers={}, ts={}",
+            asset_id, risk_score, is_blocked, confidence_ratio, publisher_count, timestamp
+        );
+        
+        Ok(())
+    }
+
+    pub fn verify_decision(
+        ctx: Context<VerifyDecision>,
+        _asset_id: String,
+        timestamp: i64,
+        decision_hash: [u8; 32],
+        signature: [u8; 64],
+        signer_pubkey: [u8; 32],
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let signer_pubkey_key = Pubkey::new_from_array(signer_pubkey);
+        
+        require!(
+            signer_pubkey_key == config.trusted_signer,
+            ErrorCode::InvalidSigner
+        );
+        
+        verify_ed25519_instruction(
             &ctx.accounts.instructions_sysvar,
             &signer_pubkey,
             &decision_hash,
             &signature,
         )?;
         
-        let asset_risk = &mut ctx.accounts.asset_risk_status;
-        
-        // Set asset_id (padded to 16 bytes)
-        let mut asset_id_bytes = [0u8; 16];
-        let bytes = asset_id.as_bytes();
-        asset_id_bytes[..bytes.len()].copy_from_slice(bytes);
-        asset_risk.asset_id = asset_id_bytes;
-        
-        asset_risk.bump = ctx.bumps.asset_risk_status;
-        asset_risk.risk_score = risk_score;
-        asset_risk.is_blocked = is_blocked;
-        asset_risk.last_updated = Clock::get()?.unix_timestamp;
-        asset_risk.confidence_ratio = confidence_ratio;
-        asset_risk.publisher_count = publisher_count;
-        
-        // Store cryptographic proof
-        asset_risk.decision_hash = decision_hash;
-        asset_risk.signature = signature;
-        asset_risk.signer_pubkey = signer_pubkey;
-        
-        msg!(
-            "Updated risk status for {}: score={}, blocked={}, confidence={}bps, publishers={}, signature verified",
-            asset_id,
-            risk_score,
-            is_blocked,
-            confidence_ratio,
-            publisher_count
+        // Verifica se não está expirado (5 minutos de tolerância)
+        let current_time = Clock::get()?.unix_timestamp;
+        require!(
+            timestamp >= current_time - 300,
+            ErrorCode::DecisionExpired
         );
-        
+
+        msg!("Decision verification: VALID for timestamp {}", timestamp);
         Ok(())
     }
 
-    // asset_id: String, Asset identifier to verify, SOL/USD
-    // decision_hash: [u8; 32], Hash of the decision to verify, [0u8; 32]
-    // signature: [u8; 64], Ed25519 signature to verify, [0u8; 64]
-    // signer_pubkey: [u8; 32], Public key that signed, [0u8; 32]
-    pub fn verify_decision(
-        ctx: Context<VerifyDecision>,
-        _asset_id: String,
-        decision_hash: [u8; 32],
-        signature: [u8; 64],
-        signer_pubkey: [u8; 32],
-    ) -> Result<()> {
-        // Verify signer_pubkey matches config.trusted_signer
-        let config = &ctx.accounts.config;
-        let signer_pubkey_key = Pubkey::new_from_array(signer_pubkey);
-        
-        if signer_pubkey_key != config.trusted_signer {
-            msg!("Verification failed: signer is not trusted");
-            return Err(ErrorCode::InvalidSigner.into());
-        }
-        
-        // Verify Ed25519 signature
-        match verify_ed25519_signature(
-            &ctx.accounts.instructions_sysvar,
-            &signer_pubkey,
-            &decision_hash,
-            &signature,
-        ) {
-            Ok(_) => {
-                msg!("Signature verification: VALID");
-                Ok(())
-            }
-            Err(_) => {
-                msg!("Signature verification: INVALID");
-                Err(ErrorCode::InvalidSignature.into())
-            }
-        }
-    }
-
-    // asset_id: String, Asset identifier to query, SOL/USD
-    pub fn get_risk_status(ctx: Context<GetRiskStatus>, _asset_id: String) -> Result<()> {
+    pub fn get_risk_status(ctx: Context<GetRiskStatus>, _asset_id: String) -> Result<AssetRiskStatus> {
         let asset_risk = &ctx.accounts.asset_risk_status;
-        
-        // Convert stored bytes back to string for logging
-        let asset_id_str = String::from_utf8_lossy(&asset_risk.asset_id)
-            .trim_end_matches('\0')
-            .to_string();
-        
-        msg!(
-            "Risk Status for {}: score={}, blocked={}, confidence={}bps, publishers={}, last_updated={}",
-            asset_id_str,
-            asset_risk.risk_score,
-            asset_risk.is_blocked,
-            asset_risk.confidence_ratio,
-            asset_risk.publisher_count,
-            asset_risk.last_updated
-        );
-        
-        // Log signature verification data
-        msg!("Decision hash present: {}", asset_risk.decision_hash != [0u8; 32]);
-        msg!("Signature present: {}", asset_risk.signature != [0u8; 64]);
-        
-        Ok(())
+        Ok(asset_risk.clone())
     }
 }
 
 // ============================================================================
-// Ed25519 Signature Verification Helper
+// Verificação Segura de Ed25519
 // ============================================================================
 
-fn verify_ed25519_signature(
-    instructions_sysvar: &AccountInfo,
-    pubkey: &[u8; 32],
-    message: &[u8; 32],
-    signature: &[u8; 64],
-) -> Result<()> {
-    // Check if there's an Ed25519 signature verification instruction
-    // The Ed25519 program must be called in the same transaction before this instruction
-    
-    let current_index = instructions::load_current_index_checked(instructions_sysvar)?;
-    
-    // Look for Ed25519 verification instruction before current instruction
-    if current_index == 0 {
-        return Err(ErrorCode::MissingEd25519Instruction.into());
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct Ed25519SignatureOffsets {
+    pub signature_offset: u16,
+    pub signature_instruction_index: u16,
+    pub public_key_offset: u16,
+    pub public_key_instruction_index: u16,
+    pub message_data_offset: u16,
+    pub message_data_size: u16,
+    pub message_instruction_index: u16,
+}
+
+impl Ed25519SignatureOffsets {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < SIGNATURE_OFFSETS_LEN {
+            return Err(ErrorCode::InvalidEd25519Data.into());
+        }
+        
+        Ok(Self {
+            signature_offset: u16::from_le_bytes([bytes[0], bytes[1]]),
+            signature_instruction_index: u16::from_le_bytes([bytes[2], bytes[3]]),
+            public_key_offset: u16::from_le_bytes([bytes[4], bytes[5]]),
+            public_key_instruction_index: u16::from_le_bytes([bytes[6], bytes[7]]),
+            message_data_offset: u16::from_le_bytes([bytes[8], bytes[9]]),
+            message_data_size: u16::from_le_bytes([bytes[10], bytes[11]]),
+            message_instruction_index: u16::from_le_bytes([bytes[12], bytes[13]]),
+        })
     }
+}
+
+fn verify_ed25519_instruction(
+    instructions_sysvar: &AccountInfo,
+    expected_pubkey: &[u8; 32],
+    expected_message: &[u8; 32],
+    expected_signature: &[u8; 64],
+) -> Result<()> {
+    let current_index = instructions::load_current_index_checked(instructions_sysvar)? as usize;
     
-    // Check the previous instruction for Ed25519 program
-    let ed25519_ix = load_instruction_at_checked((current_index - 1) as usize, instructions_sysvar)?;
+    // Deve haver uma instrução anterior
+    require!(current_index > 0, ErrorCode::MissingEd25519Instruction);
     
-    // Verify it's the Ed25519 program
+    // Carrega a instrução anterior
+    let ed25519_ix = load_instruction_at_checked(current_index - 1, instructions_sysvar)?;
+    
+    // Verifica se é o programa Ed25519 oficial
     require!(
         ed25519_ix.program_id == ed25519_program::ID,
         ErrorCode::InvalidEd25519Program
     );
     
-    // Parse and verify the Ed25519 instruction data
-    // Ed25519 instruction format:
-    // - 1 byte: number of signatures
-    // - 1 byte: padding
-    // - For each signature:
-    //   - 2 bytes: signature offset
-    //   - 2 bytes: signature instruction index
-    //   - 2 bytes: public key offset
-    //   - 2 bytes: public key instruction index
-    //   - 2 bytes: message data offset
-    //   - 2 bytes: message data size
-    //   - 2 bytes: message instruction index
+    // Parse dos dados da instrução Ed25519
+    let data = &ed25519_ix.data;
+    require!(data.len() >= ED25519_INSTRUCTION_LEN, ErrorCode::InvalidEd25519Data);
     
-    let ix_data = &ed25519_ix.data;
-    require!(ix_data.len() >= 2, ErrorCode::InvalidEd25519Data);
+    let num_signatures = data[0] as usize;
+    let padding = data[1];
     
-    let num_signatures = ix_data[0];
     require!(num_signatures >= 1, ErrorCode::InvalidEd25519Data);
+    require!(padding == 0, ErrorCode::InvalidEd25519Data);
     
-    // For simplicity, we verify the first signature matches our expected values
-    // The Ed25519 program will have already verified the signature is valid
-    // We just need to ensure the correct pubkey, message, and signature were used
+    // Calcula o tamanho esperado: header + (offsets * num_signatures) + dados
+    let expected_min_len = ED25519_INSTRUCTION_LEN + (SIGNATURE_OFFSETS_LEN * num_signatures);
+    require!(data.len() >= expected_min_len, ErrorCode::InvalidEd25519Data);
     
-    // Extract offsets from instruction data (little-endian u16 values)
-    let sig_offset = u16::from_le_bytes([ix_data[2], ix_data[3]]) as usize;
-    let pubkey_offset = u16::from_le_bytes([ix_data[6], ix_data[7]]) as usize;
-    let msg_offset = u16::from_le_bytes([ix_data[10], ix_data[11]]) as usize;
-    let msg_size = u16::from_le_bytes([ix_data[12], ix_data[13]]) as usize;
+    // Para cada assinatura, verifica se os dados correspondem ao esperado
+    for i in 0..num_signatures {
+        let offset_start = ED25519_INSTRUCTION_LEN + (SIGNATURE_OFFSETS_LEN * i);
+        let offset_end = offset_start + SIGNATURE_OFFSETS_LEN;
+        
+        let offsets = Ed25519SignatureOffsets::from_bytes(&data[offset_start..offset_end])?;
+        
+        // Verifica se os dados estão na instrução atual (índice = u16::MAX significa dados na mesma instrução)
+        require!(
+            offsets.signature_instruction_index == u16::MAX ||
+            offsets.signature_instruction_index == (current_index - 1) as u16,
+            ErrorCode::InvalidInstructionIndex
+        );
+        
+        // Verifica bounds dos offsets
+        let sig_start = offsets.signature_offset as usize;
+        let sig_end = sig_start.checked_add(ED25519_SIG_LEN)
+            .ok_or(ErrorCode::InvalidEd25519Data)?;
+        require!(sig_end <= data.len(), ErrorCode::SignatureOffsetOverflow);
+        
+        let pubkey_start = offsets.public_key_offset as usize;
+        let pubkey_end = pubkey_start.checked_add(ED25519_PUBKEY_LEN)
+            .ok_or(ErrorCode::InvalidEd25519Data)?;
+        require!(pubkey_end <= data.len(), ErrorCode::PubkeyOffsetOverflow);
+        
+        let msg_start = offsets.message_data_offset as usize;
+        let msg_size = offsets.message_data_size as usize;
+        let msg_end = msg_start.checked_add(msg_size)
+            .ok_or(ErrorCode::InvalidEd25519Data)?;
+        require!(msg_end <= data.len(), ErrorCode::MessageOffsetOverflow);
+        require!(msg_size == 32, ErrorCode::InvalidMessageSize);
+        
+        // Verifica se os dados batem com o esperado
+        let ix_signature = &data[sig_start..sig_end];
+        let ix_pubkey = &data[pubkey_start..pubkey_end];
+        let ix_message = &data[msg_start..msg_end];
+        
+        // Comparação constant-time (mitiga timing attacks)
+        if secure_compare(ix_pubkey, expected_pubkey) 
+            && secure_compare(ix_signature, expected_signature)
+            && secure_compare(ix_message, expected_message) {
+            msg!("Ed25519 signature {} verified successfully", i);
+            return Ok(());
+        }
+    }
     
-    // Verify the signature data matches what we expect
-    require!(
-        ix_data.len() >= sig_offset + 64,
-        ErrorCode::InvalidEd25519Data
-    );
-    require!(
-        ix_data.len() >= pubkey_offset + 32,
-        ErrorCode::InvalidEd25519Data
-    );
-    require!(
-        ix_data.len() >= msg_offset + msg_size,
-        ErrorCode::InvalidEd25519Data
-    );
-    
-    // Verify pubkey matches
-    let ix_pubkey = &ix_data[pubkey_offset..pubkey_offset + 32];
-    require!(
-        ix_pubkey == pubkey,
-        ErrorCode::SignerMismatch
-    );
-    
-    // Verify signature matches
-    let ix_signature = &ix_data[sig_offset..sig_offset + 64];
-    require!(
-        ix_signature == signature,
-        ErrorCode::SignatureMismatch
-    );
-    
-    // Verify message (decision_hash) matches
-    let ix_message = &ix_data[msg_offset..msg_offset + msg_size];
-    require!(
-        msg_size == 32 && ix_message == message,
-        ErrorCode::MessageMismatch
-    );
-    
-    msg!("Ed25519 signature verified successfully");
-    Ok(())
+    // Se chegou aqui, nenhuma assinatura correspondeu
+    Err(ErrorCode::SignatureVerificationFailed.into())
+}
+
+/// Comparação constant-time para prevenir timing attacks
+fn secure_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 // ============================================================================
-// Account Structures
+// Conta para Replay Protection
+// ============================================================================
+
+#[account]
+pub struct UsedDecisions {
+    pub bump: u8,
+    pub decisions: Vec<DecisionRecord>,
+    pub max_size: u16,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct DecisionRecord {
+    pub hash: [u8; 32],
+    pub timestamp: i64,
+}
+
+impl UsedDecisions {
+    pub const LEN: usize = 1 + 4 + (34 * 100); // bump + vec len + 100 records
+    
+    pub fn is_used(&self, hash: [u8; 32]) -> bool {
+        self.decisions.iter().any(|d| d.hash == hash)
+    }
+    
+    pub fn mark_used(&mut self, hash: [u8; 32], timestamp: i64) -> Result<()> {
+        // Remove entradas antigas (mais de 1 hora) para economizar espaço
+        let current_time = timestamp;
+        self.decisions.retain(|d| current_time - d.timestamp < 3600);
+        
+        require!(
+            (self.decisions.len() as u16) < self.max_size,
+            ErrorCode::DecisionHistoryFull
+        );
+        
+        self.decisions.push(DecisionRecord { hash, timestamp });
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Accounts
 // ============================================================================
 
 #[account]
@@ -280,13 +333,15 @@ pub struct Config {
     pub authority: Pubkey,
     pub is_initialized: bool,
     pub trusted_signer: Pubkey,
+    pub nonce: u64, // Para tracking de operações
 }
 
 impl Config {
-    pub const LEN: usize = 1 + 32 + 1 + 32; // bump + authority + is_initialized + trusted_signer
+    pub const LEN: usize = 1 + 32 + 1 + 32 + 8; // + nonce
 }
 
 #[account]
+#[derive(Clone)] // Adicionado para retornar em get_risk_status
 pub struct AssetRiskStatus {
     pub bump: u8,
     pub asset_id: [u8; 16],
@@ -295,18 +350,18 @@ pub struct AssetRiskStatus {
     pub last_updated: i64,
     pub confidence_ratio: u64,
     pub publisher_count: u8,
+    pub timestamp: i64, // NOVO: quando foi assinado
     pub decision_hash: [u8; 32],
     pub signature: [u8; 64],
     pub signer_pubkey: [u8; 32],
 }
 
 impl AssetRiskStatus {
-    pub const LEN: usize = 1 + 16 + 1 + 1 + 8 + 8 + 1 + 32 + 64 + 32;
-    // bump + asset_id + risk_score + is_blocked + last_updated + confidence_ratio + publisher_count + decision_hash + signature + signer_pubkey
+    pub const LEN: usize = 1 + 16 + 1 + 1 + 8 + 8 + 1 + 8 + 32 + 64 + 32; // + timestamp
 }
 
 // ============================================================================
-// Context Structs
+// Contexts
 // ============================================================================
 
 #[derive(Accounts)]
@@ -319,6 +374,15 @@ pub struct InitializeConfig<'info> {
         space = 8 + Config::LEN
     )]
     pub config: Account<'info, Config>,
+    
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"used_decisions"],
+        bump,
+        space = 8 + UsedDecisions::LEN
+    )]
+    pub used_decisions: Account<'info, UsedDecisions>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -342,7 +406,7 @@ pub struct UpdateTrustedSigner<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(asset_id: String)]
+#[instruction(asset_id: String, timestamp: i64, decision_hash: [u8; 32])]
 pub struct UpdateRiskStatus<'info> {
     #[account(
         seeds = [b"config"],
@@ -351,6 +415,13 @@ pub struct UpdateRiskStatus<'info> {
         constraint = config.authority == authority.key() @ ErrorCode::Unauthorized
     )]
     pub config: Account<'info, Config>,
+    
+    #[account(
+        mut,
+        seeds = [b"used_decisions"],
+        bump = used_decisions.bump
+    )]
+    pub used_decisions: Account<'info, UsedDecisions>,
     
     #[account(
         init_if_needed,
@@ -364,7 +435,7 @@ pub struct UpdateRiskStatus<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     
-    /// CHECK: Instructions sysvar for Ed25519 verification
+    /// CHECK: Instructions sysvar verification
     #[account(address = instructions::ID)]
     pub instructions_sysvar: AccountInfo<'info>,
     
@@ -372,7 +443,6 @@ pub struct UpdateRiskStatus<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(asset_id: String)]
 pub struct VerifyDecision<'info> {
     #[account(
         seeds = [b"config"],
@@ -381,7 +451,7 @@ pub struct VerifyDecision<'info> {
     )]
     pub config: Account<'info, Config>,
     
-    /// CHECK: Instructions sysvar for Ed25519 verification
+    /// CHECK: Instructions sysvar verification
     #[account(address = instructions::ID)]
     pub instructions_sysvar: AccountInfo<'info>,
 }
@@ -397,7 +467,7 @@ pub struct GetRiskStatus<'info> {
 }
 
 // ============================================================================
-// Error Codes
+// Errors
 // ============================================================================
 
 #[error_code]
@@ -410,6 +480,8 @@ pub enum ErrorCode {
     InvalidRiskScore,
     #[msg("Confidence ratio must be between 0 and 10000 basis points")]
     InvalidConfidenceRatio,
+    #[msg("Invalid timestamp")]
+    InvalidTimestamp,
     #[msg("Program has not been initialized")]
     NotInitialized,
     #[msg("Unauthorized: caller is not the authority")]
@@ -424,10 +496,22 @@ pub enum ErrorCode {
     InvalidEd25519Program,
     #[msg("Invalid Ed25519 instruction data")]
     InvalidEd25519Data,
-    #[msg("Signer pubkey mismatch")]
-    SignerMismatch,
-    #[msg("Signature mismatch")]
-    SignatureMismatch,
-    #[msg("Message hash mismatch")]
-    MessageMismatch,
+    #[msg("Invalid instruction index in Ed25519 data")]
+    InvalidInstructionIndex,
+    #[msg("Signature offset overflow")]
+    SignatureOffsetOverflow,
+    #[msg("Public key offset overflow")]
+    PubkeyOffsetOverflow,
+    #[msg("Message offset overflow")]
+    MessageOffsetOverflow,
+    #[msg("Invalid message size")]
+    InvalidMessageSize,
+    #[msg("Signature verification failed")]
+    SignatureVerificationFailed,
+    #[msg("Decision hash already used")]
+    DecisionAlreadyUsed,
+    #[msg("Decision history full")]
+    DecisionHistoryFull,
+    #[msg("Decision expired")]
+    DecisionExpired,
 }
