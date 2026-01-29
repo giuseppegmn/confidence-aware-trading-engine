@@ -69,6 +69,7 @@ async function main() {
 
   // Hermes v2 client: use getPriceFeeds (NOT getLatestPriceFeeds)
   const feeds = await client.getPriceFeeds({ ids: [asset.pythFeedId] });
+  console.log("[DEBUG] feeds:", JSON.stringify(feeds, null, 2));
   const feed = feeds?.[0];
 
   if (!feed?.price) {
