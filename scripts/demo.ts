@@ -1,10 +1,9 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import crypto from 'crypto';
 
 dotenv.config({ path: '.env' });
 
-import { HermesClient } from '@pythnetwork/hermes-client'; // kept (not required anymore, but harmless)
+import { HermesClient } from '@pythnetwork/hermes-client'; // kept (harmless, not required)
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
 import { SUPPORTED_ASSETS } from '../src/lib/oracle/pythHermes';
 import type { OracleSnapshot, OraclePrice, OracleMetrics } from '../src/lib/oracle/types';
@@ -74,14 +73,11 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
 
   const url = `${base}/v2/updates/price/latest?ids%5B%5D=${encodeURIComponent(id0x)}`;
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-  });
+  const res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Hermes HTTP ${res.status} fetching latest price. url=${url} body=${text.slice(0, 300)}`);
+    throw new Error(`Hermes HTTP ${res.status}. url=${url} body=${text.slice(0, 300)}`);
   }
 
   const body: any = await res.json();
@@ -89,7 +85,6 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const priceObj = parsed?.price;
 
   if (!priceObj) {
-    console.log('[DEBUG] Hermes response:', JSON.stringify(body, null, 2));
     throw new Error(`No parsed price found in Hermes response for id=${id0x}`);
   }
 
@@ -98,35 +93,45 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const confidence = Number(priceObj.conf) * Math.pow(10, expo);
   const publishTime = Number(priceObj.publish_time);
 
+  if (![expo, price, confidence, publishTime].every(Number.isFinite)) {
+    throw new Error(`Invalid numeric fields in Hermes response for id=${id0x}`);
+  }
+
   return { expo, price, confidence, publishTime, id0x };
 }
 
-function secretFingerprint(b64: string) {
+function fingerprintB64(b64: string) {
   const buf = Buffer.from(b64, 'base64');
-  // fingerprint only (doesn't reveal key)
   return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
 }
 
-async function main() {
-  // --- hard diagnostics ---
-  const cwd = process.cwd();
-  const envExists = fs.existsSync('.env');
-  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64;
+function getSignerFromEnv(): { signer: SigningEngine; source: string; fp?: string } {
+  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64?.trim();
+  const b58 = process.env.CATE_TRUSTED_SIGNER_SECRET?.trim();
 
-  console.log('\n=== ENV DIAGNOSTICS ===');
-  console.log('CWD:', cwd);
-  console.log('.env exists:', envExists);
-  console.log('B64 present:', !!b64);
-  console.log('B64 length:', b64 ? b64.length : 0);
-  console.log('B64 fingerprint:', b64 ? secretFingerprint(b64) : 'N/A');
-
-  if (!b64) {
-    throw new Error('Missing CATE_TRUSTED_SIGNER_SECRET_B64 in .env');
+  if (b64 && b58) {
+    throw new Error(
+      'Set only ONE: CATE_TRUSTED_SIGNER_SECRET_B64 or CATE_TRUSTED_SIGNER_SECRET (base58). Not both.'
+    );
   }
 
-  // use b64 directly (signing.ts supports "b64:<...>")
-  const signer = new SigningEngine(`b64:${b64}`);
+  if (b64) {
+    const signer = new SigningEngine(`b64:${b64}`);
+    return { signer, source: 'env:B64', fp: fingerprintB64(b64) };
+  }
 
+  if (b58) {
+    const signer = new SigningEngine(b58);
+    return { signer, source: 'env:BASE58' };
+  }
+
+  // If nothing provided, this will generate ephemeral keys — not what you want for “stable signer”.
+  throw new Error(
+    'Missing signer key. Set CATE_TRUSTED_SIGNER_SECRET_B64 (base64) OR CATE_TRUSTED_SIGNER_SECRET (base58) in .env.'
+  );
+}
+
+async function main() {
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -135,13 +140,14 @@ async function main() {
   const asset = SUPPORTED_ASSETS.find((a) => a.active) || SUPPORTED_ASSETS[0];
   if (!asset) throw new Error('No supported assets configured');
 
+  const { signer, source, fp } = getSignerFromEnv();
+
   console.log(`\n[CATE demo] Hermes endpoint: ${endpoint}`);
   console.log(`[CATE demo] Asset: ${asset.id} (${asset.pythFeedId})`);
+  console.log(`[CATE demo] Signer source: ${source}${fp ? ` fp=${fp}` : ''}`);
+  console.log(`[CATE demo] Signer pubkey: ${signer.getPublicKey()}`);
 
-  const latest = await fetchLatestPriceFromHermes({
-    endpoint,
-    feedId: asset.pythFeedId,
-  });
+  const latest = await fetchLatestPriceFromHermes({ endpoint, feedId: asset.pythFeedId });
 
   const snapshot = buildSnapshot({
     assetId: asset.id,
@@ -166,6 +172,18 @@ async function main() {
   );
 
   const verification = verifySignedDecision(signed);
+
+  console.log('\n=== ORACLE ===');
+  console.log(`feedId:     ${snapshot.price.feedId}`);
+  console.log(`price:      ${fmt(snapshot.price.price)}`);
+  console.log(`confidence: ${fmt(snapshot.price.confidence)} (±)`);
+  console.log(`ratio:      ${fmt(snapshot.metrics.confidenceRatio)}%`);
+  console.log(`publishTime:${snapshot.price.publishTime}`);
+
+  console.log('\n=== DECISION ===');
+  console.log(`action:         ${decision.action}`);
+  console.log(`riskScore:       ${decision.riskScore.toFixed(0)}/100`);
+  console.log(`sizeMultiplier:  ${(decision.sizeMultiplier * 100).toFixed(0)}%`);
 
   console.log('\n=== SIGNATURE ===');
   console.log(`signer:   ${signed.signerPublicKey}`);
