@@ -10,7 +10,6 @@
 
 import nacl from 'tweetnacl';
 import bs58Import from 'bs58';
-import { Buffer } from 'buffer';
 
 // Normalize bs58 for ESM/CJS interop (bs58 may export { default })
 const bs58: any = (bs58Import as any).default ?? (bs58Import as any);
@@ -60,6 +59,44 @@ export interface SignatureVerification {
 }
 
 // ============================================
+// HELPERS
+// ============================================
+
+function decodeBase64ToBytes(b64: string): Uint8Array {
+  const clean = b64.trim();
+
+  // Node / bundlers that polyfill Buffer
+  const Buf = (globalThis as any).Buffer;
+  if (Buf?.from) {
+    const buf = Buf.from(clean, 'base64');
+    return new Uint8Array(buf);
+  }
+
+  // Browser fallback
+  if (typeof atob === 'function') {
+    const bin = atob(clean);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  throw new Error('No base64 decoder available (neither Buffer nor atob).');
+}
+
+function normalizeSecretFromEnvOrDirect(secret: string): Uint8Array {
+  const trimmed = secret.trim();
+  if (!trimmed) throw new Error('Empty secret key.');
+
+  // Allow "b64:<base64>"
+  if (trimmed.startsWith('b64:')) {
+    return decodeBase64ToBytes(trimmed.slice(4));
+  }
+
+  // Otherwise treat as base58
+  return bs58.decode(trimmed);
+}
+
+// ============================================
 // KEY MANAGEMENT
 // ============================================
 
@@ -78,16 +115,7 @@ export function generateKeyPair(): KeyPair {
  * - OR a string prefixed with "b64:" that contains base64 encoded 64-byte Ed25519 secret key
  */
 export function loadKeyPair(secret: string): KeyPair {
-  const trimmed = secret.trim();
-  let secretKeyBytes: Uint8Array;
-
-  if (trimmed.startsWith('b64:')) {
-    const b64 = trimmed.slice(4);
-    const buf = Buffer.from(b64, 'base64');
-    secretKeyBytes = new Uint8Array(buf);
-  } else {
-    secretKeyBytes = bs58.decode(trimmed);
-  }
+  const secretKeyBytes = normalizeSecretFromEnvOrDirect(secret);
 
   // tweetnacl expects 64-byte Ed25519 secret key (seed+publickey)
   if (secretKeyBytes.length !== 64) {
@@ -303,13 +331,13 @@ export class SigningEngine {
   ): SignedDecision {
     const signed = createSignedDecision(
       assetId,
-      price,
-      confidence,
-      riskScore,
-      action,
-      sizeMultiplier,
-      explanation,
-      this.keypair
+      price: price,
+      confidence: confidence,
+      riskScore: riskScore,
+      action: action,
+      sizeMultiplier: sizeMultiplier,
+      explanation: explanation,
+      keypair: this.keypair
     );
 
     this.signedDecisions.push(signed);
