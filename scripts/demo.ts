@@ -5,7 +5,7 @@ import { HermesClient } from '@pythnetwork/hermes-client'; // kept (not required
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
 import { SUPPORTED_ASSETS } from '../src/lib/oracle/pythHermes';
 import type { OracleSnapshot, OraclePrice, OracleMetrics } from '../src/lib/oracle/types';
-import { verifySignedDecision, SigningEngine } from '../src/lib/crypto/signing';
+import { verifySignedDecision, getSigningEngine } from '../src/lib/crypto/signing';
 
 function fmt(n: number) {
   return Number.isFinite(n) ? n.toFixed(6) : String(n);
@@ -69,7 +69,6 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   const base = params.endpoint.replace(/\/+$/, '');
   const id0x = ensure0x(params.feedId);
 
-  // Hermes v2 REST (latest price updates)
   const url = `${base}/v2/updates/price/latest?ids%5B%5D=${encodeURIComponent(id0x)}`;
 
   const res = await fetch(url, {
@@ -109,31 +108,9 @@ async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: st
   return { expo, price, confidence, publishTime, id0x };
 }
 
-async function getSignerSecretBase58FromEnv(): Promise<string> {
-  // Prefer B64 (works everywhere on Windows)
-  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64;
-  if (!b64) {
-    throw new Error(
-      'Missing CATE_TRUSTED_SIGNER_SECRET_B64 in .env (must be base64 of 64-byte Ed25519 secretKey)'
-    );
-  }
-
-  const secretBytes = Buffer.from(b64, 'base64');
-  if (secretBytes.length !== 64) {
-    throw new Error(`CATE_TRUSTED_SIGNER_SECRET_B64 must decode to 64 bytes, got ${secretBytes.length}`);
-  }
-
-  // bs58 sometimes exports as { default: ... } depending on module system
-  const bs58mod: any = await import('bs58');
-  const bs58 = bs58mod.default ?? bs58mod;
-
-  return bs58.encode(new Uint8Array(secretBytes));
-}
-
 async function main() {
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
 
-  // Keep client instantiation for compatibility/visibility
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const client = new HermesClient(endpoint);
 
@@ -157,9 +134,10 @@ async function main() {
     exponent: latest.expo,
   });
 
-  // ✅ Deterministic signer key (B64 in .env -> base58 -> SigningEngine)
-  const secretBase58 = await getSignerSecretBase58FromEnv();
-  const signer = new SigningEngine(secretBase58);
+  // ✅ Deterministic signer via env:
+  // - CATE_TRUSTED_SIGNER_SECRET (base58) OR
+  // - CATE_TRUSTED_SIGNER_SECRET_B64 (base64)
+  const signer = getSigningEngine();
 
   const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
   const decision = engine.evaluate(snapshot);
