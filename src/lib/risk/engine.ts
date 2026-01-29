@@ -21,36 +21,83 @@ import { getSigningEngine, type SignedDecision } from '../crypto/signing';
 export type RiskAction = 'ALLOW' | 'SCALE' | 'BLOCK';
 
 export interface RiskFactor {
+  /** Factor name */
   name: string;
+
+  /** Factor value */
   value: number;
+
+  /** Threshold that triggered action */
   threshold: number;
+
+  /** Impact on decision (negative = cautious) */
   impact: number;
+
+  /** Whether this factor triggered a constraint */
   triggered: boolean;
+
+  /** Human-readable description */
   description: string;
+
+  /** Severity level */
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
 }
 
 export interface RiskParameters {
+  /** Max confidence ratio before scaling (%) */
   maxConfidenceRatioScale: number;
+
+  /** Max confidence ratio before blocking (%) */
   maxConfidenceRatioBlock: number;
+
+  /** Max confidence z-score before blocking */
   maxConfidenceZscore: number;
+
+  /** Max data staleness in seconds */
   maxStalenessSeconds: number;
+
+  /** Max realized volatility (annualized %) before scaling */
   maxVolatilityScale: number;
+
+  /** Max realized volatility before blocking */
   maxVolatilityBlock: number;
+
+  /** Min data quality score required */
   minDataQualityScore: number;
+
+  /** Volatility spike threshold */
   volatilitySpikeThreshold: number;
+
+  /** Require real oracle data (fail if using fallback) */
   requireLiveOracle: boolean;
 }
 
 export interface RiskDecision {
+  /** The action to take */
   action: RiskAction;
+
+  /** Position size multiplier (0.0 to 1.0) */
   sizeMultiplier: number;
+
+  /** Risk score (0 to 100, higher = riskier) */
   riskScore: number;
+
+  /** Human-readable explanation */
   explanation: string;
+
+  /** Detailed breakdown of factors */
   factors: RiskFactor[];
+
+  /** Timestamp of decision */
   timestamp: number;
+
+  /** Oracle snapshot at time of decision */
   oracleSnapshot: OracleSnapshot;
+
+  /** Parameters used for decision */
   parameters: RiskParameters;
+
+  /** Cryptographic signature */
   signedDecision: SignedDecision;
 }
 
@@ -239,8 +286,7 @@ function evaluateDataQuality(metrics: OracleMetrics, params: RiskParameters): Ri
 function evaluateVolatilitySpike(metrics: OracleMetrics, params: RiskParameters): RiskFactor {
   const expected = metrics.volatilityExpected || 1;
   const ratio = metrics.volatilityRealized / expected;
-  const triggered =
-    ratio > params.volatilitySpikeThreshold && metrics.confidenceRatio > params.maxConfidenceRatioScale;
+  const triggered = ratio > params.volatilitySpikeThreshold && metrics.confidenceRatio > params.maxConfidenceRatioScale;
 
   let impact = 0;
   let description = '';
@@ -311,6 +357,7 @@ function evaluateOracleSource(snapshot: OracleSnapshot, params: RiskParameters):
 function calculateSizeMultiplier(factors: RiskFactor[], params: RiskParameters, metrics: OracleMetrics): number {
   let multiplier = 1.0;
 
+  // Confidence ratio scaling
   if (metrics.confidenceRatio > params.maxConfidenceRatioScale) {
     const scaleFactor = Math.max(
       0.1,
@@ -319,6 +366,7 @@ function calculateSizeMultiplier(factors: RiskFactor[], params: RiskParameters, 
     multiplier *= scaleFactor;
   }
 
+  // Volatility scaling
   if (metrics.volatilityRealized > params.maxVolatilityScale) {
     const scaleFactor = Math.max(
       0.2,
@@ -327,9 +375,13 @@ function calculateSizeMultiplier(factors: RiskFactor[], params: RiskParameters, 
     multiplier *= scaleFactor;
   }
 
+  // Z-score scaling
   const zscore = Math.abs(metrics.confidenceZscore);
   if (zscore > params.maxConfidenceZscore * 0.5) {
-    const scaleFactor = Math.max(0.3, 1 - (zscore - params.maxConfidenceZscore * 0.5) / (params.maxConfidenceZscore * 0.5));
+    const scaleFactor = Math.max(
+      0.3,
+      1 - (zscore - params.maxConfidenceZscore * 0.5) / (params.maxConfidenceZscore * 0.5)
+    );
     multiplier *= scaleFactor;
   }
 
@@ -380,15 +432,20 @@ function generateExplanation(action: RiskAction, factors: RiskFactor[], riskScor
 export class RiskEngine {
   private parameters: RiskParameters;
   private decisionHistory: RiskDecision[] = [];
-  private maxHistoryLength = 1000;
+  private maxHistoryLength: number = 1000;
 
   constructor(params: RiskParameters = DEFAULT_RISK_PARAMETERS) {
     this.parameters = { ...params };
   }
 
+  /**
+   * Evaluate risk for a given oracle snapshot
+   * Returns a cryptographically signed decision
+   */
   evaluate(snapshot: OracleSnapshot): RiskDecision {
     const metrics = snapshot.metrics;
 
+    // Evaluate all risk factors
     const factors: RiskFactor[] = [
       evaluateConfidenceRatio(metrics, this.parameters),
       evaluateConfidenceZscore(metrics, this.parameters),
@@ -399,21 +456,24 @@ export class RiskEngine {
       evaluateOracleSource(snapshot, this.parameters),
     ];
 
+    // Check for blocking conditions
     const hasBlocker = factors.some((f) => f.triggered);
+
+    // Calculate metrics
     const riskScore = calculateRiskScore(factors);
     const sizeMultiplier = hasBlocker ? 0 : calculateSizeMultiplier(factors, this.parameters, metrics);
 
+    // Determine action
     let action: RiskAction;
     if (hasBlocker) action = 'BLOCK';
     else if (sizeMultiplier < 0.95) action = 'SCALE';
     else action = 'ALLOW';
 
+    // Generate explanation
     const explanation = generateExplanation(action, factors, riskScore, sizeMultiplier);
 
-    // ✅ IMPORTANT: lazy signer, no import side-effect
-    const signer = getSigningEngine();
-
-    const signedDecision = signer.sign(
+    // Sign the decision (LAZY SINGLETON)
+    const signedDecision = getSigningEngine().sign(
       snapshot.price.assetId,
       snapshot.price.price,
       snapshot.price.confidence,
@@ -435,6 +495,7 @@ export class RiskEngine {
       signedDecision,
     };
 
+    // Store in history
     this.decisionHistory.push(decision);
     if (this.decisionHistory.length > this.maxHistoryLength) this.decisionHistory.shift();
 
@@ -453,13 +514,51 @@ export class RiskEngine {
     return [...this.decisionHistory];
   }
 
-  getRecentDecisions(count = 10): RiskDecision[] {
+  getRecentDecisions(count: number = 10): RiskDecision[] {
     return this.decisionHistory.slice(-count);
+  }
+
+  getStatistics(): {
+    totalDecisions: number;
+    allowedCount: number;
+    scaledCount: number;
+    blockedCount: number;
+    averageRiskScore: number;
+    averageSizeMultiplier: number;
+  } {
+    const total = this.decisionHistory.length;
+    if (total === 0) {
+      return {
+        totalDecisions: 0,
+        allowedCount: 0,
+        scaledCount: 0,
+        blockedCount: 0,
+        averageRiskScore: 0,
+        averageSizeMultiplier: 0,
+      };
+    }
+
+    return {
+      totalDecisions: total,
+      allowedCount: this.decisionHistory.filter((d) => d.action === 'ALLOW').length,
+      scaledCount: this.decisionHistory.filter((d) => d.action === 'SCALE').length,
+      blockedCount: this.decisionHistory.filter((d) => d.action === 'BLOCK').length,
+      averageRiskScore: this.decisionHistory.reduce((sum, d) => sum + d.riskScore, 0) / total,
+      averageSizeMultiplier: this.decisionHistory.reduce((sum, d) => sum + d.sizeMultiplier, 0) / total,
+    };
+  }
+
+  clearHistory(): void {
+    this.decisionHistory = [];
   }
 
   getSignerPublicKey(): string {
     return getSigningEngine().getPublicKey();
   }
 }
+
+// ============================================
+// SINGLETON INSTANCE
+// ============================================
 
 export const riskEngine = new RiskEngine();
