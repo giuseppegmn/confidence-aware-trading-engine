@@ -15,6 +15,7 @@ function buildSnapshot(params: {
   price: number;
   confidence: number;
   publishTime: number;
+  exponent?: number;
 }): OracleSnapshot {
   const now = Date.now();
 
@@ -27,12 +28,11 @@ function buildSnapshot(params: {
     publishTime: params.publishTime,
     emaPrice: params.price,
     emaConfidence: params.confidence,
-    exponent: -8,
+    exponent: params.exponent ?? -8,
     source: 'PYTH_HERMES',
     sequence: 1,
   };
 
-  // Minimal metrics for demo (the UI/ingestion builds richer metrics)
   const confidenceRatio = params.price === 0 ? 999 : (params.confidence / Math.abs(params.price)) * 100;
   const metrics: OracleMetrics = {
     confidenceRatio,
@@ -67,8 +67,17 @@ async function main() {
   console.log(`\n[CATE demo] Hermes endpoint: ${endpoint}`);
   console.log(`[CATE demo] Asset: ${asset.id} (${asset.pythFeedId})`);
 
-  const [feed] = await client.getLatestPriceFeeds([asset.pythFeedId]);
-  if (!feed?.price) throw new Error('No price data returned from Hermes');
+  // ✅ FIX: use getPriceFeeds instead of getLatestPriceFeeds
+  // This returns feed objects that include a `price` field compatible with your existing logic.
+  const feeds = await client.getPriceFeeds({ ids: [asset.pythFeedId] });
+  const feed = feeds?.[0];
+
+  if (!feed?.price) {
+    throw new Error(
+      `No price data returned from Hermes for feedId=${asset.pythFeedId}. ` +
+      `Check the feed id format and Hermes endpoint.`
+    );
+  }
 
   const expo = feed.price.expo;
   const px = Number(feed.price.price) * Math.pow(10, expo);
@@ -80,16 +89,15 @@ async function main() {
     price: px,
     confidence: conf,
     publishTime: feed.price.publishTime,
+    exponent: expo,
   });
 
-  // Use a deterministic signer if provided, else ephemeral
   const secret = process.env.CATE_TRUSTED_SIGNER_SECRET;
   const signer = new SigningEngine(secret);
   const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
 
   const decision = engine.evaluate(snapshot);
 
-  // Re-sign using our signer for deterministic demo key control
   const signed = signer.sign(
     snapshot.price.assetId,
     snapshot.price.price,
