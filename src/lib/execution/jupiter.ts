@@ -1,174 +1,220 @@
 /**
- * CATE - Jupiter Execution Layer
- * 
- * Production-grade trade execution via Jupiter Aggregator.
- * Features:
- * - Risk-gated execution (no bypassing)
- * - Position scaling based on risk
- * - Complete audit logging
- * - Slippage protection
- * - Balance tracking
+ * Jupiter Execution Engine
+ * With transaction simulation and slippage protection
  */
 
-import { Connection, PublicKey, VersionedTransaction, TransactionMessage, Keypair } from '@solana/web3.js';
-import type { RiskDecision } from '../risk/engine';
-import type { OracleSnapshot } from '../oracle/types';
+import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { SOLANA_RPC } from '@/config/env';
 
-// ============================================
+// =============================================================================
 // TYPES
-// ============================================
+// =============================================================================
 
-export type ExecutionStatus = 'PENDING' | 'EXECUTED' | 'BLOCKED' | 'FAILED' | 'SIMULATED';
-
-export interface TokenBalance {
-  mint: string;
-  symbol: string;
-  balance: number;
-  decimals: number;
-  usdValue?: number;
-}
-
-export interface TradeIntent {
-  /** Unique trade ID */
-  id: string;
-  
-  /** Input token mint */
-  inputMint: string;
-  
-  /** Output token mint */
-  outputMint: string;
-  
-  /** Input amount in smallest units */
-  inputAmount: bigint;
-  
-  /** Minimum output amount (slippage protection) */
-  minOutputAmount?: bigint;
-  
-  /** Maximum slippage in basis points */
-  maxSlippageBps: number;
-  
-  /** Trade direction for display */
-  direction: 'BUY' | 'SELL';
-  
-  /** Asset ID for risk evaluation */
+export interface ExecutionIntent {
   assetId: string;
-  
-  /** Timestamp of intent */
-  timestamp: number;
-  
-  /** Trader's wallet */
-  trader: string;
+  direction: 'BUY' | 'SELL';
+  amount: bigint;
+  maxSlippageBps: number; // Basis points (100 = 1%)
 }
 
 export interface ExecutionResult {
-  /** Trade intent */
-  intent: TradeIntent;
-  
-  /** Risk decision */
-  decision: RiskDecision;
-  
-  /** Execution status */
-  status: ExecutionStatus;
-  
-  /** Actual input amount (after scaling) */
-  actualInputAmount: bigint;
-  
-  /** Actual output amount */
-  actualOutputAmount?: bigint;
-  
-  /** Execution price */
-  executionPrice?: number;
-  
-  /** Actual slippage in bps */
+  status: 'EXECUTED' | 'BLOCKED' | 'FAILED';
+  signature?: string;
+  reason?: string;
+  assetId: string;
+  timestamp: number;
   actualSlippageBps?: number;
-  
-  /** Transaction signature */
-  txSignature?: string;
-  
-  /** Error message */
-  errorMessage?: string;
-  
-  /** Balances before execution */
-  balancesBefore?: TokenBalance[];
-  
-  /** Balances after execution */
-  balancesAfter?: TokenBalance[];
-  
-  /** Execution timestamp */
-  executedAt: number;
-  
-  /** Jupiter quote used */
-  jupiterQuote?: any;
+  simulationError?: string;
 }
 
-export interface JupiterQuote {
-  inputMint: string;
-  outputMint: string;
-  inAmount: string;
+interface JupiterRoute {
   outAmount: string;
+  otherAmountThreshold: string;
+  swapMode: string;
   priceImpactPct: string;
-  slippageBps: number;
   routePlan: any[];
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
+// =============================================================================
+// CONFIG
+// =============================================================================
 
-const JUPITER_API_URL = 'https://quote-api.jup.ag/v6';
+const JUPITER_API = 'https://quote-api.jup.ag/v6';
+const MAX_PRICE_IMPACT = 5.0; // 5% max price impact
+const MIN_LIQUIDITY = 1000; // Minimum $1000 liquidity
+const SIMULATION_RETRIES = 3;
 
-// Common token mints
-export const TOKEN_MINTS = {
-  SOL: 'So11111111111111111111111111111111111111112',
-  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-  JUP: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
-  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-  BTC: '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E',
-  ETH: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs',
-};
+// =============================================================================
+// EXECUTION ENGINE
+// =============================================================================
 
-// Asset ID to token mint mapping
-export const ASSET_TO_MINT: Record<string, string> = {
-  'SOL/USD': TOKEN_MINTS.SOL,
-  'BTC/USD': TOKEN_MINTS.BTC,
-  'ETH/USD': TOKEN_MINTS.ETH,
-  'JUP/USD': TOKEN_MINTS.JUP,
-  'BONK/USD': TOKEN_MINTS.BONK,
-};
+export class JupiterExecutionEngine {
+  private connection: Connection;
+  private simulationMode: boolean = false;
 
-// ============================================
-// JUPITER API CLIENT
-// ============================================
-
-async function getJupiterQuote(
-  inputMint: string,
-  outputMint: string,
-  amount: bigint,
-  slippageBps: number
-): Promise<JupiterQuote | null> {
-  try {
-    const url = `${JUPITER_API_URL}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount.toString()}&slippageBps=${slippageBps}`;
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error(`[Jupiter] Quote failed: ${response.status}`);
-      return null;
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('[Jupiter] Quote error:', error);
-    return null;
+  constructor() {
+    this.connection = new Connection(SOLANA_RPC, 'confirmed');
   }
-}
 
-async function getJupiterSwapTransaction(
-  quote: JupiterQuote,
-  userPublicKey: string
-): Promise<{ swapTransaction: string } | null> {
-  try {
-    const response = await fetch(`${JUPITER_API_URL}/swap`, {
+  setSimulationMode(enabled: boolean): void {
+    this.simulationMode = enabled;
+  }
+
+  async execute(params: {
+    assetId: string;
+    direction: 'BUY' | 'SELL';
+    amount: bigint;
+    maxSlippageBps: number;
+    wallet: { publicKey: PublicKey; signTransaction: (tx: any) => Promise<any> };
+  }): Promise<ExecutionResult> {
+    const { assetId, direction, amount, maxSlippageBps, wallet } = params;
+    const startTime = Date.now();
+
+    try {
+      // 1. Get quote from Jupiter
+      const inputMint = direction === 'BUY' 
+        ? 'So11111111111111111111111111111111111111112' // WSOL
+        : this.getMintForAsset(assetId);
+      const outputMint = direction === 'BUY'
+        ? this.getMintForAsset(assetId)
+        : 'So11111111111111111111111111111111111111112';
+
+      const quote = await this.getQuote(
+        inputMint,
+        outputMint,
+        amount.toString(),
+        maxSlippageBps
+      );
+
+      // 2. Validate quote
+      const validation = this.validateQuote(quote, maxSlippageBps);
+      if (!validation.valid) {
+        return {
+          status: 'BLOCKED',
+          reason: validation.reason,
+          assetId,
+          timestamp: Date.now()
+        };
+      }
+
+      // 3. Get swap transaction
+      const swapTransaction = await this.getSwapTransaction(
+        quote,
+        wallet.publicKey.toString()
+      );
+
+      // 4. Simulate before executing (CRITICAL)
+      const simulationResult = await this.simulateTransaction(swapTransaction);
+      if (!simulationResult.success) {
+        return {
+          status: 'FAILED',
+          reason: `Simulation failed: ${simulationResult.error}`,
+          assetId,
+          timestamp: Date.now(),
+          simulationError: simulationResult.error
+        };
+      }
+
+      // 5. Execute or simulate
+      if (this.simulationMode) {
+        return {
+          status: 'EXECUTED',
+          signature: 'SIMULATED_' + Date.now(),
+          assetId,
+          timestamp: Date.now(),
+          actualSlippageBps: Math.floor(parseFloat(quote.priceImpactPct) * 100)
+        };
+      }
+
+      // Deserialize and sign
+      const transaction = VersionedTransaction.deserialize(
+        Buffer.from(swapTransaction.swapTransaction, 'base64')
+      );
+
+      const signed = await wallet.signTransaction(transaction);
+      
+      // Send and confirm
+      const signature = await this.connection.sendRawTransaction(signed.serialize(), {
+        maxRetries: 3,
+        preflightCommitment: 'confirmed'
+      });
+
+      await this.connection.confirmTransaction(signature, 'confirmed');
+
+      return {
+        status: 'EXECUTED',
+        signature,
+        assetId,
+        timestamp: Date.now(),
+        actualSlippageBps: Math.floor(parseFloat(quote.priceImpactPct) * 100)
+      };
+
+    } catch (error) {
+      console.error('[Jupiter] Execution error:', error);
+      return {
+        status: 'FAILED',
+        reason: error instanceof Error ? error.message : 'Unknown error',
+        assetId,
+        timestamp: Date.now()
+      };
+    }
+  }
+
+  // =============================================================================
+  // INTERNAL METHODS
+  // =============================================================================
+
+  private async getQuote(
+    inputMint: string,
+    outputMint: string,
+    amount: string,
+    slippageBps: number
+  ): Promise<JupiterRoute> {
+    const url = new URL(`${JUPITER_API}/quote`);
+    url.searchParams.append('inputMint', inputMint);
+    url.searchParams.append('outputMint', outputMint);
+    url.searchParams.append('amount', amount);
+    url.searchParams.append('slippageBps', slippageBps.toString());
+    url.searchParams.append('onlyDirectRoutes', 'false');
+    url.searchParams.append('asLegacyTransaction', 'false');
+
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      throw new Error(`Jupiter API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  private validateQuote(quote: JupiterRoute, maxSlippageBps: number): { valid: boolean; reason?: string } {
+    // Check price impact
+    const priceImpact = parseFloat(quote.priceImpactPct);
+    if (priceImpact > MAX_PRICE_IMPACT) {
+      return {
+        valid: false,
+        reason: `Price impact too high: ${priceImpact.toFixed(2)}% (max: ${MAX_PRICE_IMPACT}%)`
+      };
+    }
+
+    // Check slippage tolerance
+    if (priceImpact * 100 > maxSlippageBps) {
+      return {
+        valid: false,
+        reason: `Slippage ${priceImpact.toFixed(2)}% exceeds tolerance ${(maxSlippageBps / 100).toFixed(2)}%`
+      };
+    }
+
+    // Check if route exists
+    if (!quote.routePlan || quote.routePlan.length === 0) {
+      return { valid: false, reason: 'No valid route found' };
+    }
+
+    return { valid: true };
+  }
+
+  private async getSwapTransaction(quote: JupiterRoute, userPublicKey: string): Promise<any> {
+    const response = await fetch(`${JUPITER_API}/swap`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -176,379 +222,57 @@ async function getJupiterSwapTransaction(
         userPublicKey,
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
-        prioritizationFeeLamports: 'auto',
-      }),
+        prioritizationFeeLamports: 'auto'
+      })
     });
-    
+
     if (!response.ok) {
-      console.error(`[Jupiter] Swap transaction failed: ${response.status}`);
-      return null;
+      throw new Error('Failed to get swap transaction');
     }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('[Jupiter] Swap transaction error:', error);
-    return null;
+
+    return response.json();
   }
-}
 
-// ============================================
-// TRADE ID GENERATION
-// ============================================
-
-let tradeCounter = 0;
-
-function generateTradeId(): string {
-  tradeCounter++;
-  const timestamp = Date.now().toString(36);
-  const counter = tradeCounter.toString(36).padStart(4, '0');
-  const random = Math.random().toString(36).substring(2, 6);
-  return `CATE-${timestamp}-${counter}-${random}`.toUpperCase();
-}
-
-// ============================================
-// EXECUTION ENGINE
-// ============================================
-
-export class JupiterExecutionEngine {
-  private connection: Connection;
-  private executionLog: ExecutionResult[] = [];
-  private maxLogLength: number = 1000;
-  private subscribers: Set<(result: ExecutionResult) => void> = new Set();
-  private simulationMode: boolean;
-  
-  constructor(rpcEndpoint: string, simulationMode: boolean = true) {
-    this.connection = new Connection(rpcEndpoint, 'confirmed');
-    this.simulationMode = simulationMode;
-    
-    console.log(`[JupiterExecution] Initialized in ${simulationMode ? 'SIMULATION' : 'LIVE'} mode`);
-  }
-  
-  /**
-   * Execute a trade with mandatory risk check
-   * NO TRADE CAN BYPASS RISK INTELLIGENCE
-   */
-  async execute(
-    intent: TradeIntent,
-    decision: RiskDecision,
-    wallet?: { publicKey: PublicKey; signTransaction: (tx: any) => Promise<any> }
-  ): Promise<ExecutionResult> {
-    const startTime = Date.now();
-    
-    // MANDATORY: Check risk decision
-    if (decision.action === 'BLOCK') {
-      const result = this.createBlockedResult(intent, decision);
-      this.logResult(result);
-      return result;
-    }
-    
-    // Calculate scaled amount
-    const scaledAmount = BigInt(
-      Math.floor(Number(intent.inputAmount) * decision.sizeMultiplier)
-    );
-    
-    if (scaledAmount === 0n) {
-      const result = this.createFailedResult(
-        intent, 
-        decision, 
-        'Scaled amount is zero'
-      );
-      this.logResult(result);
-      return result;
-    }
-    
-    // Get quote from Jupiter
-    const quote = await getJupiterQuote(
-      intent.inputMint,
-      intent.outputMint,
-      scaledAmount,
-      intent.maxSlippageBps
-    );
-    
-    if (!quote) {
-      const result = this.createFailedResult(
-        intent,
-        decision,
-        'Failed to get Jupiter quote'
-      );
-      this.logResult(result);
-      return result;
-    }
-    
-    // Check price impact
-    const priceImpact = parseFloat(quote.priceImpactPct);
-    if (priceImpact > intent.maxSlippageBps / 100) {
-      const result = this.createFailedResult(
-        intent,
-        decision,
-        `Price impact ${priceImpact.toFixed(2)}% exceeds max slippage`
-      );
-      result.jupiterQuote = quote;
-      this.logResult(result);
-      return result;
-    }
-    
-    // Simulation mode - don't execute real transaction
-    if (this.simulationMode || !wallet) {
-      const result = this.createSimulatedResult(intent, decision, quote, scaledAmount);
-      this.logResult(result);
-      return result;
-    }
-    
-    // LIVE EXECUTION
+  private async simulateTransaction(swapTx: any): Promise<{ success: boolean; error?: string }> {
     try {
-      // Get swap transaction
-      const swapResult = await getJupiterSwapTransaction(
-        quote,
-        wallet.publicKey.toString()
+      const transaction = VersionedTransaction.deserialize(
+        Buffer.from(swapTx.swapTransaction, 'base64')
       );
-      
-      if (!swapResult) {
-        const result = this.createFailedResult(
-          intent,
-          decision,
-          'Failed to build swap transaction'
-        );
-        this.logResult(result);
-        return result;
+
+      const result = await this.connection.simulateTransaction(transaction, {
+        replaceRecentBlockhash: true,
+        commitment: 'processed'
+      });
+
+      if (result.value.err) {
+        return { success: false, error: JSON.stringify(result.value.err) };
       }
-      
-      // Deserialize and sign
-      const swapTransactionBuf = Buffer.from(swapResult.swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-      
-      // Sign transaction
-      const signedTransaction = await wallet.signTransaction(transaction);
-      
-      // Send and confirm
-      const txSignature = await this.connection.sendRawTransaction(
-        signedTransaction.serialize(),
-        { skipPreflight: true, maxRetries: 3 }
-      );
-      
-      // Wait for confirmation
-      const confirmation = await this.connection.confirmTransaction(
-        txSignature,
-        'confirmed'
-      );
-      
-      if (confirmation.value.err) {
-        const result = this.createFailedResult(
-          intent,
-          decision,
-          `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-        );
-        result.txSignature = txSignature;
-        this.logResult(result);
-        return result;
-      }
-      
-      // Success
-      const result: ExecutionResult = {
-        intent,
-        decision,
-        status: 'EXECUTED',
-        actualInputAmount: scaledAmount,
-        actualOutputAmount: BigInt(quote.outAmount),
-        executionPrice: Number(quote.outAmount) / Number(scaledAmount),
-        actualSlippageBps: Math.round(priceImpact * 100),
-        txSignature,
-        executedAt: Date.now(),
-        jupiterQuote: quote,
-      };
-      
-      this.logResult(result);
-      return result;
-      
+
+      return { success: true };
     } catch (error) {
-      const result = this.createFailedResult(
-        intent,
-        decision,
-        `Execution error: ${error}`
-      );
-      this.logResult(result);
-      return result;
-    }
-  }
-  
-  /**
-   * Create a trade intent
-   */
-  createIntent(
-    assetId: string,
-    direction: 'BUY' | 'SELL',
-    inputAmount: bigint,
-    maxSlippageBps: number,
-    trader: string
-  ): TradeIntent {
-    const tokenMint = ASSET_TO_MINT[assetId] || TOKEN_MINTS.SOL;
-    
-    return {
-      id: generateTradeId(),
-      inputMint: direction === 'BUY' ? TOKEN_MINTS.USDC : tokenMint,
-      outputMint: direction === 'BUY' ? tokenMint : TOKEN_MINTS.USDC,
-      inputAmount,
-      maxSlippageBps,
-      direction,
-      assetId,
-      timestamp: Date.now(),
-      trader,
-    };
-  }
-  
-  /**
-   * Get execution statistics
-   */
-  getStatistics(): {
-    totalTrades: number;
-    executedCount: number;
-    blockedCount: number;
-    failedCount: number;
-    simulatedCount: number;
-    successRate: number;
-  } {
-    const total = this.executionLog.length;
-    if (total === 0) {
-      return {
-        totalTrades: 0,
-        executedCount: 0,
-        blockedCount: 0,
-        failedCount: 0,
-        simulatedCount: 0,
-        successRate: 0,
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Simulation failed' 
       };
     }
-    
-    return {
-      totalTrades: total,
-      executedCount: this.executionLog.filter(r => r.status === 'EXECUTED').length,
-      blockedCount: this.executionLog.filter(r => r.status === 'BLOCKED').length,
-      failedCount: this.executionLog.filter(r => r.status === 'FAILED').length,
-      simulatedCount: this.executionLog.filter(r => r.status === 'SIMULATED').length,
-      successRate: this.executionLog.filter(r => 
-        r.status === 'EXECUTED' || r.status === 'SIMULATED'
-      ).length / total,
+  }
+
+  private getMintForAsset(assetId: string): string {
+    // Map asset IDs to mint addresses
+    const mappings: Record<string, string> = {
+      'SOL/USD': 'So11111111111111111111111111111111111111112',
+      'BTC/USD': '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh',
+      'ETH/USD': '7vfCXTUXx5WJV5JkpCkYHV1h3p1P1N7zHZtpzF22npYN',
+      'USDC/USD': 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
     };
-  }
-  
-  /**
-   * Get execution log
-   */
-  getLog(): ExecutionResult[] {
-    return [...this.executionLog];
-  }
-  
-  /**
-   * Get recent executions
-   */
-  getRecentExecutions(count: number = 10): ExecutionResult[] {
-    return this.executionLog.slice(-count).reverse();
-  }
-  
-  /**
-   * Subscribe to execution results
-   */
-  subscribe(callback: (result: ExecutionResult) => void): () => void {
-    this.subscribers.add(callback);
-    return () => this.subscribers.delete(callback);
-  }
-  
-  /**
-   * Set simulation mode
-   */
-  setSimulationMode(enabled: boolean): void {
-    this.simulationMode = enabled;
-    console.log(`[JupiterExecution] Mode set to ${enabled ? 'SIMULATION' : 'LIVE'}`);
-  }
-  
-  /**
-   * Check if in simulation mode
-   */
-  isSimulationMode(): boolean {
-    return this.simulationMode;
-  }
-  
-  // ==========================================
-  // PRIVATE METHODS
-  // ==========================================
-  
-  private createBlockedResult(
-    intent: TradeIntent,
-    decision: RiskDecision
-  ): ExecutionResult {
-    const triggeredFactors = decision.factors
-      .filter(f => f.triggered)
-      .map(f => f.name)
-      .join(', ');
-    
-    return {
-      intent,
-      decision,
-      status: 'BLOCKED',
-      actualInputAmount: 0n,
-      errorMessage: `Risk blocked: ${triggeredFactors || 'Risk threshold exceeded'}`,
-      executedAt: Date.now(),
-    };
-  }
-  
-  private createFailedResult(
-    intent: TradeIntent,
-    decision: RiskDecision,
-    errorMessage: string
-  ): ExecutionResult {
-    return {
-      intent,
-      decision,
-      status: 'FAILED',
-      actualInputAmount: 0n,
-      errorMessage,
-      executedAt: Date.now(),
-    };
-  }
-  
-  private createSimulatedResult(
-    intent: TradeIntent,
-    decision: RiskDecision,
-    quote: JupiterQuote,
-    scaledAmount: bigint
-  ): ExecutionResult {
-    const priceImpact = parseFloat(quote.priceImpactPct);
-    
-    return {
-      intent,
-      decision,
-      status: 'SIMULATED',
-      actualInputAmount: scaledAmount,
-      actualOutputAmount: BigInt(quote.outAmount),
-      executionPrice: Number(quote.outAmount) / Number(scaledAmount),
-      actualSlippageBps: Math.round(priceImpact * 100),
-      txSignature: `SIM-${generateTradeId()}`,
-      executedAt: Date.now(),
-      jupiterQuote: quote,
-    };
-  }
-  
-  private logResult(result: ExecutionResult): void {
-    this.executionLog.push(result);
-    if (this.executionLog.length > this.maxLogLength) {
-      this.executionLog.shift();
+
+    const mint = mappings[assetId];
+    if (!mint) {
+      throw new Error(`Unknown asset: ${assetId}`);
     }
-    
-    for (const callback of this.subscribers) {
-      try {
-        callback(result);
-      } catch (error) {
-        console.error('[JupiterExecution] Subscriber error:', error);
-      }
-    }
+    return mint;
   }
 }
 
-// ============================================
-// SINGLETON INSTANCE
-// ============================================
-
-export const jupiterExecutionEngine = new JupiterExecutionEngine(
-  'https://api.devnet.solana.com',
-  true // Start in simulation mode
-);
+// Singleton
+export const jupiterExecutionEngine = new JupiterExecutionEngine();
