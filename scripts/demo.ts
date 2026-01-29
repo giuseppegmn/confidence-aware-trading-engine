@@ -39,7 +39,7 @@ function buildSnapshot(params: {
     confidenceZscore: 0,
     volatilityRealized: 0,
     volatilityExpected: 0,
-    dataFreshnessSeconds: Math.max(0, (now / 1000) - params.publishTime),
+    dataFreshnessSeconds: Math.max(0, now / 1000 - params.publishTime),
     avgConfidenceRatio1h: confidenceRatio,
     avgConfidenceRatio24h: confidenceRatio,
     priceChange1h: 0,
@@ -61,19 +61,18 @@ async function main() {
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
   const client = new HermesClient(endpoint);
 
-  const asset = SUPPORTED_ASSETS.find(a => a.active) || SUPPORTED_ASSETS[0];
+  const asset = SUPPORTED_ASSETS.find((a) => a.active) || SUPPORTED_ASSETS[0];
   if (!asset) throw new Error('No supported assets configured');
 
   console.log(`\n[CATE demo] Hermes endpoint: ${endpoint}`);
   console.log(`[CATE demo] Asset: ${asset.id} (${asset.pythFeedId})`);
 
-  // ✅ FIX: use getPriceFeeds instead of getLatestPriceFeeds
-  // This returns feed objects that include a `price` field compatible with your existing logic.
+  // Hermes v2 client: use getPriceFeeds (NOT getLatestPriceFeeds)
   const feeds = await client.getPriceFeeds({ ids: [asset.pythFeedId] });
   const feed = feeds?.[0];
-  if (!feed?.price) throw new Error('No price data returned from Hermes');
 
-    );
+  if (!feed?.price) {
+    throw new Error(`No price data returned from Hermes for feedId=${asset.pythFeedId}`);
   }
 
   const expo = feed.price.expo;
