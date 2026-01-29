@@ -9,7 +9,10 @@
  */
 
 import nacl from 'tweetnacl';
-import bs58 from 'bs58';
+import bs58Import from 'bs58';
+
+// Normalize bs58 for ESM/CJS interop (bs58 may export { default })
+const bs58: any = (bs58Import as any).default ?? (bs58Import as any);
 
 // ============================================
 // TYPES
@@ -68,17 +71,32 @@ export function generateKeyPair(): KeyPair {
   };
 }
 
-export function loadKeyPair(secretKeyBase58: string): KeyPair {
-  const secretKey = bs58.decode(secretKeyBase58);
+/**
+ * Load keypair from:
+ * - base58 encoded 64-byte Ed25519 secret key
+ * - OR a string prefixed with "b64:" that contains base64 encoded 64-byte Ed25519 secret key
+ */
+export function loadKeyPair(secret: string): KeyPair {
+  const trimmed = secret.trim();
+  let secretKeyBytes: Uint8Array;
+
+  if (trimmed.startsWith('b64:')) {
+    const b64 = trimmed.slice(4);
+    const buf = Buffer.from(b64, 'base64');
+    secretKeyBytes = new Uint8Array(buf);
+  } else {
+    secretKeyBytes = bs58.decode(trimmed);
+  }
 
   // tweetnacl expects 64-byte Ed25519 secret key (seed+publickey)
-  if (secretKey.length !== 64) {
+  if (secretKeyBytes.length !== 64) {
     throw new Error(
-      `Invalid secret key length: expected 64 bytes base58-encoded Ed25519 secret key, got ${secretKey.length}`
+      `Invalid secret key length: expected 64 bytes, got ${secretKeyBytes.length}. ` +
+        `Provide base58(64 bytes) or "b64:<base64-of-64-bytes>"`
     );
   }
 
-  const keypair = nacl.sign.keyPair.fromSecretKey(secretKey);
+  const keypair = nacl.sign.keyPair.fromSecretKey(secretKeyBytes);
   return {
     publicKey: keypair.publicKey,
     secretKey: keypair.secretKey,
@@ -256,7 +274,6 @@ export class SigningEngine {
   constructor(existingSecretKey?: string) {
     if (existingSecretKey) {
       this.keypair = loadKeyPair(existingSecretKey);
-      // Keep logs minimal (demo prints enough)
       console.log('[SigningEngine] Loaded existing keypair');
     } else {
       this.keypair = generateKeyPair();
@@ -325,8 +342,8 @@ let _signingEngine: SigningEngine | null = null;
 
 /**
  * Get a singleton SigningEngine.
- * - In browser: tries localStorage (CATE_ENGINE_KEY) for persistence.
- * - In node: tries process.env.CATE_TRUSTED_SIGNER_SECRET if present.
+ * - Node: env CATE_TRUSTED_SIGNER_SECRET (base58) OR CATE_TRUSTED_SIGNER_SECRET_B64 (base64)
+ * - Browser: localStorage key CATE_ENGINE_KEY (base58)
  */
 export function getSigningEngine(): SigningEngine {
   if (_signingEngine) return _signingEngine;
@@ -335,7 +352,13 @@ export function getSigningEngine(): SigningEngine {
 
   // Node env
   if (typeof process !== 'undefined' && (process as any).env) {
-    secret = (process as any).env.CATE_TRUSTED_SIGNER_SECRET;
+    const env = (process as any).env;
+    secret = env.CATE_TRUSTED_SIGNER_SECRET;
+
+    if (!secret && env.CATE_TRUSTED_SIGNER_SECRET_B64) {
+      // pass as "b64:<...>" so loadKeyPair can decode
+      secret = `b64:${env.CATE_TRUSTED_SIGNER_SECRET_B64}`;
+    }
   }
 
   // Browser localStorage
@@ -345,7 +368,7 @@ export function getSigningEngine(): SigningEngine {
 
   _signingEngine = new SigningEngine(secret);
 
-  // Persist only in browser and only if we didn't have a stored key
+  // Persist only in browser
   if (typeof window !== 'undefined') {
     const hadStored = !!localStorage.getItem('CATE_ENGINE_KEY');
     if (!hadStored) {
