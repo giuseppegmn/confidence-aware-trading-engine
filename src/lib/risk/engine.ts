@@ -12,7 +12,8 @@
  */
 
 import type { OracleSnapshot, OracleMetrics } from '../oracle/types';
-import { signingEngine, type SignedDecision } from '../crypto/signing';
+import { getSigningEngine, type SignedDecision } from '../crypto/signing';
+
 
 // ============================================
 // TYPES
