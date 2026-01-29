@@ -1,15 +1,12 @@
-import './index.css';
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+﻿import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import { CATEProvider } from './lib/CATEContext'
 
-import App from './App.tsx';
-
-const rootElement = document.getElementById('root');
-if (!rootElement) throw new Error('Failed to find the root element');
-
-createRoot(rootElement).render(
-    <BrowserRouter>
-        <App />
-    </BrowserRouter>,
-);
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <CATEProvider>
+      <App />
+    </CATEProvider>
+  </React.StrictMode>,
+)
