@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+
 import { HermesClient } from '@pythnetwork/hermes-client'; // kept (not required anymore, but harmless)
 import { RiskEngine, DEFAULT_RISK_PARAMETERS } from '../src/lib/risk/engine';
 import { SUPPORTED_ASSETS } from '../src/lib/oracle/pythHermes';
@@ -63,10 +65,7 @@ function ensure0x(id: string) {
   return trimmed.startsWith('0x') ? trimmed : `0x${trimmed}`;
 }
 
-async function fetchLatestPriceFromHermes(params: {
-  endpoint: string;
-  feedId: string;
-}) {
+async function fetchLatestPriceFromHermes(params: { endpoint: string; feedId: string }) {
   const base = params.endpoint.replace(/\/+$/, '');
   const id0x = ensure0x(params.feedId);
 
@@ -84,13 +83,10 @@ async function fetchLatestPriceFromHermes(params: {
   }
 
   const body: any = await res.json();
-
-  // Typical shape: { parsed: [ { id, price: { price, conf, expo, publish_time } } ], binary: { ... } }
   const parsed = body?.parsed?.[0];
   const priceObj = parsed?.price;
 
   if (!priceObj) {
-    // Debug in case API shape differs
     console.log('[DEBUG] Hermes response:', JSON.stringify(body, null, 2));
     throw new Error(`No parsed price found in Hermes response for id=${id0x}`);
   }
@@ -100,7 +96,12 @@ async function fetchLatestPriceFromHermes(params: {
   const confidence = Number(priceObj.conf) * Math.pow(10, expo);
   const publishTime = Number(priceObj.publish_time);
 
-  if (!Number.isFinite(price) || !Number.isFinite(confidence) || !Number.isFinite(expo) || !Number.isFinite(publishTime)) {
+  if (
+    !Number.isFinite(price) ||
+    !Number.isFinite(confidence) ||
+    !Number.isFinite(expo) ||
+    !Number.isFinite(publishTime)
+  ) {
     console.log('[DEBUG] priceObj:', JSON.stringify(priceObj, null, 2));
     throw new Error(`Invalid numeric fields in Hermes price object for id=${id0x}`);
   }
@@ -108,11 +109,31 @@ async function fetchLatestPriceFromHermes(params: {
   return { expo, price, confidence, publishTime, id0x };
 }
 
+async function getSignerSecretBase58FromEnv(): Promise<string> {
+  // Prefer B64 (works everywhere on Windows)
+  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64;
+  if (!b64) {
+    throw new Error(
+      'Missing CATE_TRUSTED_SIGNER_SECRET_B64 in .env (must be base64 of 64-byte Ed25519 secretKey)'
+    );
+  }
+
+  const secretBytes = Buffer.from(b64, 'base64');
+  if (secretBytes.length !== 64) {
+    throw new Error(`CATE_TRUSTED_SIGNER_SECRET_B64 must decode to 64 bytes, got ${secretBytes.length}`);
+  }
+
+  // bs58 sometimes exports as { default: ... } depending on module system
+  const bs58mod: any = await import('bs58');
+  const bs58 = bs58mod.default ?? bs58mod;
+
+  return bs58.encode(new Uint8Array(secretBytes));
+}
+
 async function main() {
   const endpoint = process.env.CATE_HERMES_ENDPOINT || 'https://hermes.pyth.network';
 
-  // Keep client instantiation for compatibility/visibility, even though we use REST below.
-  // (Helps future refactors; harmless if unused.)
+  // Keep client instantiation for compatibility/visibility
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const client = new HermesClient(endpoint);
 
@@ -129,17 +150,18 @@ async function main() {
 
   const snapshot = buildSnapshot({
     assetId: asset.id,
-    feedId: latest.id0x, // store normalized id for clarity
+    feedId: latest.id0x,
     price: latest.price,
     confidence: latest.confidence,
     publishTime: latest.publishTime,
     exponent: latest.expo,
   });
 
-  const secret = process.env.CATE_TRUSTED_SIGNER_SECRET;
-  const signer = new SigningEngine(secret);
-  const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
+  // ✅ Deterministic signer key (B64 in .env -> base58 -> SigningEngine)
+  const secretBase58 = await getSignerSecretBase58FromEnv();
+  const signer = new SigningEngine(secretBase58);
 
+  const engine = new RiskEngine(DEFAULT_RISK_PARAMETERS);
   const decision = engine.evaluate(snapshot);
 
   const signed = signer.sign(
