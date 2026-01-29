@@ -2,10 +2,13 @@
  * CATE - Cryptographic Signing Module
  *
  * Production-grade Ed25519 signing for risk decisions.
- * Every decision is cryptographically signed for:
  * - Verifiability
  * - Non-repudiation
  * - On-chain verification
+ *
+ * IMPORTANT:
+ * - NO side effects on import (no singleton created at module load)
+ * - Use getSigningEngine() for lazy singleton
  */
 
 import nacl from 'tweetnacl';
@@ -64,6 +67,7 @@ export interface SignatureVerification {
 
 function decodeBase64ToBytes(b64: string): Uint8Array {
   const clean = b64.trim();
+  if (!clean) throw new Error('Empty base64 string.');
 
   // Node / bundlers that polyfill Buffer
   const Buf = (globalThis as any).Buffer;
@@ -83,7 +87,7 @@ function decodeBase64ToBytes(b64: string): Uint8Array {
   throw new Error('No base64 decoder available (neither Buffer nor atob).');
 }
 
-function normalizeSecret(secret: string): Uint8Array {
+function normalizeSecretToBytes(secret: string): Uint8Array {
   const trimmed = secret.trim();
   if (!trimmed) throw new Error('Empty secret key.');
 
@@ -115,7 +119,7 @@ export function generateKeyPair(): KeyPair {
  * - OR "b64:<base64-of-64-bytes>"
  */
 export function loadKeyPair(secret: string): KeyPair {
-  const secretKeyBytes = normalizeSecret(secret);
+  const secretKeyBytes = normalizeSecretToBytes(secret);
 
   // tweetnacl expects 64-byte Ed25519 secret key (seed+publickey)
   if (secretKeyBytes.length !== 64) {
@@ -159,6 +163,7 @@ export function hashDecisionPayload(payload: DecisionPayload): string {
   const messageBytes = new TextEncoder().encode(canonical);
   const hash = nacl.hash(messageBytes);
 
+  // use first 32 bytes of sha512
   return bs58.encode(hash.slice(0, 32));
 }
 
@@ -174,7 +179,6 @@ export function generateNonce(): string {
 export function signDecision(payload: DecisionPayload, keypair: KeyPair): { signature: string; hash: string } {
   const hash = hashDecisionPayload(payload);
   const hashBytes = bs58.decode(hash);
-
   const signature = nacl.sign.detached(hashBytes, keypair.secretKey);
 
   return {
@@ -281,7 +285,7 @@ export function verifySignedDecision(decision: SignedDecision): SignatureVerific
       signerPublicKey: decision.signerPublicKey,
       decisionHash: decision.decisionHash,
       timestamp: decision.timestamp,
-      error: `Verification error: ${error}`,
+      error: `Verification error: ${String(error)}`,
     };
   }
 }
@@ -303,9 +307,14 @@ export class SigningEngine {
   constructor(existingSecretKey?: string) {
     if (existingSecretKey) {
       this.keypair = loadKeyPair(existingSecretKey);
+      // logs ok in demo; if you want silence, remove these
+      console.log('[SigningEngine] Loaded existing keypair');
     } else {
       this.keypair = generateKeyPair();
+      console.log('[SigningEngine] Generated new keypair');
     }
+
+    console.log(`[SigningEngine] Public key: ${this.keypair.publicKeyBase58}`);
   }
 
   getPublicKey(): string {
@@ -375,14 +384,14 @@ export function getSigningEngine(): SigningEngine {
 
   let secret: string | undefined;
 
-  // Node env
+  // Node env (safe access)
   try {
     const env = (globalThis as any)?.process?.env;
     if (env) {
-      secret = env.CATE_TRUSTED_SIGNER_SECRET;
+      secret = env.CATE_TRUSTED_SIGNER_SECRET?.trim();
 
       if (!secret && env.CATE_TRUSTED_SIGNER_SECRET_B64) {
-        secret = `b64:${env.CATE_TRUSTED_SIGNER_SECRET_B64}`;
+        secret = `b64:${String(env.CATE_TRUSTED_SIGNER_SECRET_B64).trim()}`;
       }
     }
   } catch {
