@@ -110,7 +110,12 @@ async function main() {
   const decision = engine.evaluate(snapshot as any);
 
   // Sign decision hash (32 bytes) for on-chain Ed25519 verification
-  const signer = new SigningEngine(process.env.CATE_TRUSTED_SIGNER_SECRET);
+  const b64 = process.env.CATE_TRUSTED_SIGNER_SECRET_B64;
+  if (!b64) {
+  throw new Error('Missing CATE_TRUSTED_SIGNER_SECRET_B64 in .env');
+  }
+  const signer = new SigningEngine(`b64:${b64}`);
+
   const signed = signer.sign(
     asset.id,
     px,
