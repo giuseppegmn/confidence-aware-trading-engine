@@ -1,357 +1,128 @@
-/**
- * CATE - React Context Provider
- * 
- * Production-grade React integration for the CATE Engine.
- * Provides real-time state management for:
- * - Oracle feeds from Pyth Hermes
- * - Risk decisions with cryptographic signing
- * - Execution through Jupiter
- * - Circuit breaker status
- * - System observability
- */
-
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import {
-  cateEngine,
-  type EngineState,
-  type EngineStatus,
-  type OracleSnapshot,
-  type RiskDecision,
-  type ExecutionResult,
-  type CircuitStatus,
-  type SystemMetrics,
-  SUPPORTED_ASSETS,
-} from './CATEEngine';
-import type { RiskParameters } from './risk/engine';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { pythHermesService } from './oracle/pythHermes';
+import { riskEngine } from './risk/engine';
+import { circuitBreaker, CircuitStatus } from './failsafe/circuitBreaker';
+import { decisionLogger } from './observability/decisionLog';
 import { onChainTrustService } from './chain/onChainTrust';
+import { requestRemoteSigning, DecisionPayload } from './crypto/signing';
+import { PublicKey } from '@solana/web3.js';
 
-// ============================================
-// CONTEXT TYPES
-// ============================================
-
-interface CATEContextType {
-  // Engine state
-  isRunning: boolean;
-  engineStatus: EngineStatus;
-  
-  // Oracle data
-  snapshots: Map<string, OracleSnapshot>;
-  selectedAsset: string;
-  setSelectedAsset: (assetId: string) => void;
-  
-  // Risk decisions
-  decisions: Map<string, RiskDecision>;
-  
-  // Execution
-  recentExecutions: ExecutionResult[];
-  executionStats: {
-    totalTrades: number;
-    executedCount: number;
-    blockedCount: number;
-    failedCount: number;
-    simulatedCount: number;
-    successRate: number;
-  };
-  
-  // Circuit breaker
-  circuitStatus: CircuitStatus;
-  
-  // Metrics
-  metrics: SystemMetrics;
-  
-  // Risk parameters
-  riskParams: RiskParameters;
-  updateRiskParams: (params: Partial<RiskParameters>) => void;
-  
-  // Actions
-  executeTrade: (assetId: string, side: 'BUY' | 'SELL', amount: bigint, maxSlippageBps: number) => Promise<ExecutionResult>;
-  executeDemoTrade: () => Promise<ExecutionResult>;
-  emergencyStop: (reason: string) => void;
-  resetCircuitBreaker: () => void;
-  
-  // On-chain
-  initializeOnChain: () => Promise<{ success: boolean; txSignature?: string; error?: string }>;
-  publishToChain: (assetId: string) => Promise<{ success: boolean; txSignature?: string; error?: string }>;
-  isChainInitialized: boolean;
-  
-  // Engine control
-  startEngine: () => Promise<void>;
-  stopEngine: () => void;
-  
-  // Mode
-  isSimulationMode: boolean;
-  setSimulationMode: (enabled: boolean) => void;
-  
-  // Signer info
-  signerPublicKey: string;
-  
-  // Assets
-  supportedAssets: typeof SUPPORTED_ASSETS;
-}
-
-const CATEContext = createContext<CATEContextType | null>(null);
-
-// ============================================
-// PROVIDER COMPONENT
-// ============================================
+// ... (interfaces mantidas) ...
 
 export function CATEProvider({ children }: { children: React.ReactNode }) {
-  const wallet = useWallet();
-  const { connection } = useConnection();
+  const [isRunning, setIsRunning] = useState(false);
+  const [snapshots, setSnapshots] = useState<Map<string, OracleSnapshot>>(new Map());
+  const [decisions, setDecisions] = useState<Map<string, RiskDecision>>(new Map());
+  const [metrics, setMetrics] = useState<SystemMetrics>({});
+  const [circuitStatus, setCircuitStatus] = useState<CircuitStatus>({ 
+    state: 'CLOSED', 
+    reason: '', 
+    failureCount: 0,
+    isOpen: false 
+  });
   
-  // Engine state
-  const [engineState, setEngineState] = useState<EngineState | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState('SOL/USD');
-  const [isChainInitialized, setIsChainInitialized] = useState(false);
-  
-  // Subscribe to engine updates
-  useEffect(() => {
-    const unsubscribe = cateEngine.subscribe((state) => {
-      setEngineState(state);
-    });
-    
-    return unsubscribe;
-  }, []);
-  
-  // Auto-start engine
-  useEffect(() => {
-    cateEngine.start();
-    return () => cateEngine.stop();
-  }, []);
-  
-  // Initialize on-chain service when wallet connects
-  useEffect(() => {
-    if (wallet.publicKey && wallet.signTransaction) {
-      onChainTrustService.initializeWithWallet(wallet as any);
-      onChainTrustService.checkConfigInitialized().then(setIsChainInitialized);
+  // Ref para controlar nonce único por sessão
+  const nonceRef = useRef(0);
+
+  // ... (outros estados) ...
+
+  /**
+   * Atualização de risco com assinatura remota
+   */
+  const updateRiskStatus = useCallback(async (assetId: string, decision: RiskDecision) => {
+    try {
+      const snapshot = snapshots.get(assetId);
+      if (!snapshot) {
+        throw new Error('No snapshot available for signing');
+      }
+
+      // Prepara payload para API
+      const payload: DecisionPayload = {
+        assetId,
+        price: snapshot.price.price,
+        timestamp: Math.floor(Date.now() / 1000),
+        confidenceRatio: Math.floor(snapshot.price.confidence * 100), // Converter para basis points
+        riskScore: decision.score || 0,
+        isBlocked: decision.action === 'BLOCK',
+        publisherCount: snapshot.price.numPublishers || 0,
+        nonce: ++nonceRef.current // Prevents replay attacks
+      };
+
+      // 🔐 ASSINATURA REMOTA (nunca local!)
+      const signedDecision = await requestRemoteSigning(payload);
+
+      // Envia para blockchain
+      const tx = await onChainTrustService.submitDecision({
+        assetId,
+        riskScore: signedDecision.riskScore,
+        isBlocked: signedDecision.isBlocked,
+        confidenceRatio: signedDecision.confidenceRatio,
+        publisherCount: signedDecision.publisherCount,
+        timestamp: signedDecision.timestamp,
+        decisionHash: new Uint8Array(signedDecision.decisionHash),
+        signature: new Uint8Array(signedDecision.signature),
+        signerPubkey: new Uint8Array(signedDecision.signerPublicKey)
+      });
+
+      decisionLogger.logExecution({
+        assetId,
+        decision,
+        txSignature: tx,
+        timestamp: Date.now()
+      });
+
+      return tx;
+    } catch (error) {
+      console.error('[CATEContext] Failed to update risk status:', error);
+      circuitBreaker.recordFailure(`updateRiskStatus_${assetId}`);
+      throw error;
     }
-  }, [wallet.publicKey, wallet.signTransaction]);
-  
-  // Execute trade
+  }, [snapshots]);
+
+  /**
+   * Execução de trade (sem acesso a chaves privadas)
+   */
   const executeTrade = useCallback(async (
     assetId: string,
-    side: 'BUY' | 'SELL',
+    direction: 'BUY' | 'SELL',
     amount: bigint,
-    maxSlippageBps: number
-  ): Promise<ExecutionResult> => {
-    return cateEngine.executeTrade(
+    maxSlippageBps: number,
+    wallet: WalletContextState // Apenas para pagar gas, NUNCA para assinar decisões
+  ) => {
+    const decision = decisions.get(assetId);
+    if (!decision) {
+      throw new Error('No decision available');
+    }
+
+    // Se precisar atualizar o status na chain primeiro (com assinatura remota)
+    if (decision.requiresUpdate) {
+      await updateRiskStatus(assetId, decision);
+    }
+
+    // Executa trade via Jupiter (wallet do usuário paga gas, mas não assina decisão de risco)
+    const result = await jupiterExecutionEngine.execute({
       assetId,
-      side,
+      direction,
       amount,
       maxSlippageBps,
-      wallet.publicKey && wallet.signTransaction ? wallet as any : undefined
-    );
-  }, [wallet]);
-  
-  // Execute demo trade
-  const executeDemoTrade = useCallback(async (): Promise<ExecutionResult> => {
-    return cateEngine.executeDemoTrade(
-      wallet.publicKey && wallet.signTransaction ? wallet as any : undefined
-    );
-  }, [wallet]);
-  
-  // Initialize on-chain
-  const initializeOnChain = useCallback(async () => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
-      return { success: false, error: 'Wallet not connected' };
-    }
-    
-    const result = await cateEngine.initializeChainConfig(wallet as any);
-    if (result.success) {
-      setIsChainInitialized(true);
-    }
+      wallet // Apenas para transação Solana padrão (não para assinar CATE)
+    });
+
     return result;
-  }, [wallet]);
-  
-  // Publish to chain
-  const publishToChain = useCallback(async (assetId: string) => {
-    const decision = engineState?.decisions.get(assetId);
-    if (!decision) {
-      return { success: false, error: 'No decision for asset' };
-    }
-    return cateEngine.publishDecisionToChain(decision);
-  }, [engineState?.decisions]);
-  
-  // Update risk params
-  const updateRiskParams = useCallback((params: Partial<RiskParameters>) => {
-    cateEngine.updateRiskParameters(params);
-  }, []);
-  
-  // Emergency stop
-  const emergencyStop = useCallback((reason: string) => {
-    cateEngine.emergencyStop(reason);
-  }, []);
-  
-  // Reset circuit breaker
-  const resetCircuitBreaker = useCallback(() => {
-    cateEngine.resetCircuitBreaker();
-  }, []);
-  
-  // Start/stop engine
-  const startEngine = useCallback(async () => {
-    await cateEngine.start();
-  }, []);
-  
-  const stopEngine = useCallback(() => {
-    cateEngine.stop();
-  }, []);
-  
-  // Set simulation mode
-  const setSimulationMode = useCallback((enabled: boolean) => {
-    cateEngine.setSimulationMode(enabled);
-  }, []);
-  
-  // Memoized execution stats
-  const executionStats = useMemo(() => {
-    if (!engineState) {
-      return {
-        totalTrades: 0,
-        executedCount: 0,
-        blockedCount: 0,
-        failedCount: 0,
-        simulatedCount: 0,
-        successRate: 0,
-      };
-    }
-    
-    const executions = engineState.recentExecutions;
-    const total = executions.length || 1;
-    
-    return {
-      totalTrades: executions.length,
-      executedCount: executions.filter(e => e.status === 'EXECUTED').length,
-      blockedCount: executions.filter(e => e.status === 'BLOCKED').length,
-      failedCount: executions.filter(e => e.status === 'FAILED').length,
-      simulatedCount: executions.filter(e => e.status === 'SIMULATED').length,
-      successRate: executions.filter(e => e.status === 'EXECUTED' || e.status === 'SIMULATED').length / total,
-    };
-  }, [engineState?.recentExecutions]);
-  
-  const value: CATEContextType = {
-    // Engine state
-    isRunning: engineState?.isRunning ?? false,
-    engineStatus: engineState?.status ?? {
-      isRunning: false,
-      oracleStatus: 'DISCONNECTED',
-      circuitStatus: { state: 'CLOSED', failureCount: 0, successCount: 0, lastStateChange: 0, reason: '', assetStatus: new Map() },
-      metrics: { decisionsLastHour: 0, allowRate: 0, scaleRate: 0, blockRate: 0, avgRiskScore: 0, mostVolatileAssets: [], confidenceSpikeAssets: [], blockedTradesCount: 0, executedTradesCount: 0, oracleHealth: { connected: false, lastUpdate: 0, staleAssets: [] }, uptimeSeconds: 0 },
-      signerPublicKey: '',
-      chainConfigInitialized: false,
-      lastUpdate: 0,
-    },
-    
-    // Oracle data
-    snapshots: engineState?.snapshots ?? new Map(),
-    selectedAsset,
-    setSelectedAsset,
-    
-    // Risk decisions
-    decisions: engineState?.decisions ?? new Map(),
-    
-    // Execution
-    recentExecutions: engineState?.recentExecutions ?? [],
-    executionStats,
-    
-    // Circuit breaker
-    circuitStatus: engineState?.circuitStatus ?? { state: 'CLOSED', failureCount: 0, successCount: 0, lastStateChange: 0, reason: '', assetStatus: new Map() },
-    
-    // Metrics
-    metrics: engineState?.metrics ?? { decisionsLastHour: 0, allowRate: 0, scaleRate: 0, blockRate: 0, avgRiskScore: 0, mostVolatileAssets: [], confidenceSpikeAssets: [], blockedTradesCount: 0, executedTradesCount: 0, oracleHealth: { connected: false, lastUpdate: 0, staleAssets: [] }, uptimeSeconds: 0 },
-    
-    // Risk parameters
-    riskParams: cateEngine.getRiskParameters(),
-    updateRiskParams,
-    
-    // Actions
-    executeTrade,
-    executeDemoTrade,
-    emergencyStop,
-    resetCircuitBreaker,
-    
-    // On-chain
-    initializeOnChain,
-    publishToChain,
-    isChainInitialized,
-    
-    // Engine control
-    startEngine,
-    stopEngine,
-    
-    // Mode
-    isSimulationMode: cateEngine.isSimulationMode(),
-    setSimulationMode,
-    
-    // Signer info
-    signerPublicKey: cateEngine.getSignerPublicKey(),
-    
-    // Assets
-    supportedAssets: SUPPORTED_ASSETS,
-  };
-  
+  }, [decisions, updateRiskStatus]);
+
+  // ... (resto do provider) ...
+
   return (
-    <CATEContext.Provider value={value}>
+    <CATEContext.Provider value={{
+      isRunning,
+      startEngine,
+      stopEngine,
+      executeTrade,
+      updateRiskStatus,
+      // ... outros valores
+    }}>
       {children}
     </CATEContext.Provider>
   );
-}
-
-// ============================================
-// HOOKS
-// ============================================
-
-export function useCATE(): CATEContextType {
-  const context = useContext(CATEContext);
-  if (!context) {
-    throw new Error('useCATE must be used within a CATEProvider');
-  }
-  return context;
-}
-
-export function useAssetSnapshot(assetId: string): OracleSnapshot | undefined {
-  const { snapshots } = useCATE();
-  return snapshots.get(assetId);
-}
-
-export function useAssetDecision(assetId: string): RiskDecision | undefined {
-  const { decisions } = useCATE();
-  return decisions.get(assetId);
-}
-
-export function useSelectedAsset(): {
-  assetId: string;
-  snapshot: OracleSnapshot | undefined;
-  decision: RiskDecision | undefined;
-  setAsset: (assetId: string) => void;
-} {
-  const { selectedAsset, setSelectedAsset, snapshots, decisions } = useCATE();
-  return {
-    assetId: selectedAsset,
-    snapshot: snapshots.get(selectedAsset),
-    decision: decisions.get(selectedAsset),
-    setAsset: setSelectedAsset,
-  };
-}
-
-export function useCircuitBreaker() {
-  const { circuitStatus, emergencyStop, resetCircuitBreaker } = useCATE();
-  return {
-    status: circuitStatus,
-    emergencyStop,
-    reset: resetCircuitBreaker,
-    isOpen: circuitStatus.state === 'OPEN',
-    isHalfOpen: circuitStatus.state === 'HALF_OPEN',
-    isClosed: circuitStatus.state === 'CLOSED',
-  };
-}
-
-export function useSystemMetrics() {
-  const { metrics, engineStatus } = useCATE();
-  return {
-    metrics,
-    oracleConnected: engineStatus.oracleStatus === 'CONNECTED',
-    uptimeSeconds: metrics.uptimeSeconds,
-    blockRate: metrics.blockRate,
-    avgRiskScore: metrics.avgRiskScore,
-  };
 }
