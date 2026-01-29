@@ -11,16 +11,15 @@ function App() {
       setResult(res)
       
       if (res.blocked) {
-        alert(`🚫 BLOCKED!\n\nRisco: ${res.decision.score}/100\n${res.decision.explanation}`)
+        alert(`🚫 BLOCKED!\n\nRisco: ${res.decision.score}/100\nVolatilidade: ${res.decision.volatility}%\n\n${res.decision.explanation.substring(0, 80)}...`)
       } else {
-        alert(`✅ ${res.decision.action}!\n\nSize Multiplier: ${(res.decision.sizeMultiplier * 100).toFixed(0)}%\nRisco: ${res.decision.score}/100\n\n${res.decision.explanation.substring(0, 100)}...`)
+        alert(`✅ ${res.decision.action}!\n\nSize: ${(res.decision.sizeMultiplier * 100).toFixed(0)}%\nVol: ${res.decision.volatility}%\nRisk: ${res.decision.score}/100`)
       }
     } catch (err) {
       alert('❌ Erro: ' + err.message)
     }
   }
 
-  // Cores baseadas na ação
   const getActionColor = (action) => {
     if (!action) return '#999'
     if (action === 'ALLOW') return '#4CAF50'
@@ -29,26 +28,22 @@ function App() {
   }
 
   return (
-    <div style={{padding: 20, fontFamily: 'Arial, sans-serif', maxWidth: '700px', margin: '0 auto'}}>
+    <div style={{padding: 20, fontFamily: 'Arial, sans-serif', maxWidth: '750px', margin: '0 auto'}}>
       <h1>🔒 CATE Engine</h1>
-      <p style={{color: '#666'}}>Risk-Aware Trading with Size Multiplier</p>
+      <p style={{color: '#666'}}>Risk-Aware Trading with Volatility + Size Multiplier</p>
       
-      {/* Status Card */}
-      <div style={{marginBottom: 20, padding: 15, background: '#f5f5f5', borderRadius: 8, border: '1px solid #ddd'}}>
+      {/* Status */}
+      <div style={{marginBottom: 20, padding: 15, background: '#f5f5f5', borderRadius: 8}}>
         <h3 style={{marginTop: 0}}>Status do Sistema</h3>
         <p>
           <strong>Engine:</strong>{' '}
           <span style={{color: isRunning ? 'green' : 'red', fontWeight: 'bold'}}>
-            {isLoading ? '⏳ INICIANDO...' : isRunning ? '🟢 RODANDO' : '🔴 PARADO'}
+            {isLoading ? '⏳...' : isRunning ? '🟢 RODANDO' : '🔴 PARADO'}
           </span>
         </p>
-        <p><strong>Circuit:</strong> <span style={{color: 'green', fontWeight: 'bold'}}>CLOSED</span></p>
-        {isRunning && lastUpdate && (
-          <p style={{fontSize: '12px', color: '#666'}}>Update: {lastUpdate}</p>
-        )}
-        {signerKey && (
-          <p style={{fontSize: '11px', color: '#999'}}>Signer: {signerKey.substring(0, 20)}...</p>
-        )}
+        <p><strong>Circuit:</strong> <span style={{color: 'green'}}>CLOSED</span></p>
+        {isRunning && lastUpdate && <p style={{fontSize: '12px', color: '#666'}}>Update: {lastUpdate}</p>}
+        {signerKey && <p style={{fontSize: '11px', color: '#999'}}>Signer: {signerKey.substring(0, 20)}...</p>}
       </div>
 
       {/* Controls */}
@@ -63,21 +58,19 @@ function App() {
             color: 'white',
             border: 'none',
             borderRadius: 4,
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            opacity: isLoading ? 0.7 : 1,
-            marginRight: 10
+            cursor: isLoading ? 'not-allowed' : 'pointer'
           }}
         >
           {isLoading ? '⏳...' : isRunning ? '⏹️ PARAR' : '▶️ INICIAR'}
         </button>
       </div>
 
-      {/* ÁREA PRINCIPAL: Size Multiplier Demo */}
+      {/* Demo Area */}
       {isRunning && (
         <div style={{padding: 20, background: '#e3f2fd', borderRadius: 8, border: '2px solid #2196F3'}}>
-          <h3 style={{marginTop: 0, color: '#1976d2'}}>⚡ Size Multiplier Demo</h3>
-          <p style={{fontSize: '14px', color: '#555'}}>
-            O CATE não só decide ALLOW/SCALE/BLOCK, mas calcula <strong>quanto da posição executar</strong> baseado no risco.
+          <h3 style={{marginTop: 0, color: '#1976d2'}}>⚡ Risk Engine Avançado</h3>
+          <p style={{fontSize: '14px'}}>
+            Agora com <strong>volatilidade</strong> + <strong>confidence ratio</strong> + <strong>size multiplier</strong>
           </p>
 
           <button 
@@ -90,17 +83,13 @@ function App() {
               borderRadius: 4,
               cursor: 'pointer',
               fontSize: '16px',
-              fontWeight: 'bold',
-              marginTop: 10
+              fontWeight: 'bold'
             }}
           >
-            🎲 SIMULAR DECISÃO DE RISCO
+            🎲 SIMULAR DECISÃO (COM VOL)
           </button>
-          <p style={{fontSize: '12px', color: '#666', marginTop: 8}}>
-            Gera confidence ratio aleatório e calcula size multiplier
-          </p>
 
-          {/* RESULTADO DA ÚLTIMA DECISÃO */}
+          {/* Result Card */}
           {lastDecision && (
             <div style={{
               marginTop: 20,
@@ -110,35 +99,33 @@ function App() {
               borderLeft: `5px solid ${getActionColor(lastDecision.action)}`
             }}>
               <h4 style={{marginTop: 0, color: getActionColor(lastDecision.action)}}>
-                Última Decisão: {lastDecision.action}
+                {lastDecision.action}
               </h4>
               
-              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '14px'}}>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, fontSize: '14px'}}>
                 <div>
-                  <strong>Size Multiplier:</strong>
-                  <div style={{fontSize: '24px', fontWeight: 'bold', color: '#333'}}>
+                  <strong>Size Multiplier</strong>
+                  <div style={{fontSize: '22px', fontWeight: 'bold'}}>
                     {(lastDecision.sizeMultiplier * 100).toFixed(0)}%
-                  </div>
-                  <div style={{fontSize: '11px', color: '#666'}}>
-                    {lastDecision.action === 'ALLOW' && 'Posição completa'}
-                    {lastDecision.action === 'SCALE' && 'Posição reduzida'}
-                    {lastDecision.action === 'BLOCK' && 'Nenhuma execução'}
                   </div>
                 </div>
                 
                 <div>
-                  <strong>Risk Score:</strong>
-                  <div style={{fontSize: '24px', fontWeight: 'bold', color: lastDecision.score > 50 ? 'orange' : 'green'}}>
-                    {lastDecision.score}/100
+                  <strong>Volatilidade</strong>
+                  <div style={{fontSize: '22px', fontWeight: 'bold', color: lastDecision.volatility > 2 ? 'orange' : 'green'}}>
+                    {lastDecision.volatility.toFixed(2)}%
                   </div>
-                  <div style={{fontSize: '11px', color: '#666'}}>
-                    Confidence: {lastDecision.confidenceRatio.toFixed(2)}%
+                </div>
+                
+                <div>
+                  <strong>Risk Score</strong>
+                  <div style={{fontSize: '22px', fontWeight: 'bold', color: lastDecision.score > 50 ? 'orange' : 'green'}}>
+                    {lastDecision.score}/100
                   </div>
                 </div>
               </div>
 
-              <div style={{marginTop: 10, padding: 8, background: '#f5f5f5', borderRadius: 4, fontSize: '12px'}}>
-                <strong>Explicação:</strong><br/>
+              <div style={{marginTop: 10, padding: 10, background: '#f5f5f5', borderRadius: 4, fontSize: '12px'}}>
                 {lastDecision.explanation}
               </div>
             </div>
@@ -146,22 +133,14 @@ function App() {
         </div>
       )}
 
-      {/* Explicação do Conceito */}
-      <div style={{marginTop: 30, padding: 15, background: '#fafafa', borderRadius: 8, fontSize: '13px'}}>
-        <h4 style={{marginTop: 0}}>📊 Como funciona o Size Multiplier</h4>
-        <ul style={{paddingLeft: 20, lineHeight: '1.6'}}>
-          <li><strong>ALLOW (1.0):</strong> Risco baixo → executa 100% da posição</li>
-          <li><strong>SCALE (0.5-0.9):</strong> Risco moderado → reduz proporcionalmente</li>
-          <li><strong>BLOCK (0.0):</strong> Risco alto → nenhuma execução</li>
+      {/* Legend */}
+      <div style={{marginTop: 30, padding: 15, background: '#fafafa', borderRadius: 8, fontSize: '12px'}}>
+        <h4>📊 Métricas do Risk Engine</h4>
+        <ul style={{paddingLeft: 20, lineHeight: '1.8'}}>
+          <li><strong>Confidence Ratio:</strong> Qualidade do dado Pyth (menor = melhor)</li>
+          <li><strong>Volatilidade:</strong> Desvio padrão dos últimos 20 preços</li>
+          <li><strong>Size Multiplier:</strong> Quanto da posição executar (0-100%)</li>
         </ul>
-        <p style={{color: '#666', fontSize: '12px'}}>
-          Baseado em confidence ratio dos feeds Pyth + frescor dos dados + qualidade dos publishers.
-        </p>
-      </div>
-
-      {/* Footer */}
-      <div style={{marginTop: 20, padding: 10, fontSize: '11px', color: '#999', textAlign: 'center'}}>
-        API: {import.meta.env.VITE_API_URL || 'localhost:3001'} | Network: {import.meta.env.VITE_SOLANA_NETWORK || 'devnet'}
       </div>
     </div>
   )

@@ -1,5 +1,6 @@
 ﻿import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { requestRemoteSigning } from './crypto/signing'
+import { riskEngine } from './riskIntelligence'
 
 const CATEContext = createContext(null)
 
@@ -9,15 +10,47 @@ export function useCATE() {
   return context
 }
 
+// Simulador de volatilidade - mantém histórico entre chamadas
+function createVolatilityTracker() {
+  const prices = []
+  const maxHistory = 20
+  
+  return {
+    addPrice(price) {
+      prices.push(price)
+      if (prices.length > maxHistory) prices.shift()
+    },
+    getVolatility() {
+      if (prices.length < 5) return 0
+      const mean = prices.reduce((a, b) => a + b, 0) / prices.length
+      const squaredDiffs = prices.map(p => Math.pow(p - mean, 2))
+      const variance = squaredDiffs.reduce((a, b) => a + b, 0) / prices.length
+      const stdDev = Math.sqrt(variance)
+      return parseFloat(((stdDev / mean) * 100).toFixed(2))
+    },
+    getCount() {
+      return prices.length
+    }
+  }
+}
+
 export function CATEProvider({ children }) {
   const [isRunning, setIsRunning] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [signerKey, setSignerKey] = useState(null)
-  const [lastDecision, setLastDecision] = useState(null) // NOVO: guarda última decisão
+  const [lastDecision, setLastDecision] = useState(null)
+  
+  // useRef para manter o tracker entre renders
+  const volTrackerRef = useRef(null)
+  
+  // Inicializa o tracker uma vez
+  if (!volTrackerRef.current) {
+    volTrackerRef.current = createVolatilityTracker()
+  }
+  
   const intervalRef = useRef(null)
 
-  // Buscar chave pública do backend
   useEffect(() => {
     fetch('http://localhost:3001/health')
       .then(r => r.json())
@@ -28,64 +61,66 @@ export function CATEProvider({ children }) {
   const startEngine = useCallback(() => {
     setIsRunning(true)
     setIsLoading(true)
-    
     intervalRef.current = setInterval(() => {
       setLastUpdate(new Date().toLocaleTimeString())
     }, 3000)
-    
     setTimeout(() => setIsLoading(false), 1000)
-    console.log('✅ Engine iniciado')
   }, [])
 
   const stopEngine = useCallback(() => {
     setIsRunning(false)
     if (intervalRef.current) clearInterval(intervalRef.current)
     setLastDecision(null)
-    console.log('⏹️ Engine parado')
+    // Não reseta o volTracker para manter histórico
   }, [])
 
-  // Função de decisão com size multiplier!
   const evaluateAndSign = useCallback(async (assetId = 'SOL/USD') => {
     try {
-      // Simula snapshot do oracle
-      const mockConfidence = 1.5 + Math.random() * 3 // 1.5% a 4.5% para demo
+      // Gera preço com variação realista
+      const basePrice = 100
+      const variation = (Math.random() - 0.5) * 8 // ±4% de variação
+      const price = Math.max(80, basePrice + variation)
+      
+      // Adiciona ao tracker (persistente!)
+      volTrackerRef.current.addPrice(price)
+      const volatility = volTrackerRef.current.getVolatility()
+      const count = volTrackerRef.current.getCount()
+      
+      // Confidence aleatório
+      const confidenceRatio = 0.5 + Math.random() * 3
+      
+      console.log(`[Vol] Preço: ${price.toFixed(2)} | Histórico: ${count} | Vol: ${volatility}%`)
+
       const snapshot = {
         price: {
           id: assetId,
-          price: 100 + Math.random() * 10,
-          confidenceRatio: mockConfidence,
-          publishTime: Math.floor(Date.now() / 1000) - 10, // 10s atrás
-          numPublishers: 5
+          price: price,
+          confidenceRatio: confidenceRatio,
+          publishTime: Math.floor(Date.now() / 1000) - 10,
+          numPublishers: 5,
+          volatility24h: volatility
         }
       }
 
-      // Importa e avalia risco
-      const { riskEngine } = await import('./riskIntelligence')
       const decision = riskEngine.evaluate(snapshot)
       setLastDecision(decision)
 
-      console.log('📊 Decisão de risco:', decision)
-
-      // Se for BLOCK, não assina
       if (decision.action === 'BLOCK') {
         return { blocked: true, decision }
       }
 
-      // Prepara payload para assinatura
       const payload = {
         assetId,
-        price: snapshot.price.price,
+        price: price,
         timestamp: Math.floor(Date.now() / 1000),
-        confidenceRatio: Math.floor(mockConfidence * 100),
+        confidenceRatio: Math.floor(confidenceRatio * 100),
         riskScore: decision.score,
         isBlocked: false,
         publisherCount: 5,
         nonce: Date.now()
       }
 
-      console.log('📡 Assinando com sizeMultiplier:', decision.sizeMultiplier)
       const signed = await requestRemoteSigning(payload)
-      
       return { signed, decision }
 
     } catch (error) {
@@ -99,17 +134,12 @@ export function CATEProvider({ children }) {
     isLoading,
     lastUpdate,
     signerKey,
-    lastDecision, // NOVO: expõe última decisão
+    lastDecision,
     startEngine,
     stopEngine,
-    evaluateAndSign, // NOVO: função unificada
-    executeTrade: async () => null,
-    updateRiskParams: () => {},
-    selectAsset: () => {},
-    engineState: null,
+    evaluateAndSign,
     circuitStatus: { state: 'CLOSED', reason: '', failureCount: 0, isOpen: false },
-    selectedAsset: null,
-    metrics: { totalDecisions: 0, blockedTrades: 0, executedTrades: 0 }
+    metrics: {}
   }
 
   return (
