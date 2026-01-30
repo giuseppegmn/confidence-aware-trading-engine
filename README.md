@@ -12,7 +12,7 @@ CATE is a deterministic risk intelligence system that evaluates oracle data qual
 ---
 
 ## 🏗️ Architecture Overview
-
+```text
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   React UI      │────▶│  CATE Context    │────▶│  Pyth Hermes    │
 │  (Port 5173)    │     │  (Risk Engine)   │     │  Oracle API     │
@@ -321,4 +321,5 @@ MIT License — see [LICENSE](LICENSE) file.
 ---
 
 **Disclaimer**: CATE is experimental software. Use at your own risk. Always audit code before handling real funds.
+
 
