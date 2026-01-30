@@ -1,10 +1,10 @@
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+ï»¿import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { AnchorWallet } from '@solana/wallet-adapter-react';
 import * as anchor from '@coral-xyz/anchor';
 import bs58 from 'bs58';
 import idl from '../../idl/workspaceIDL.json';
 
-const PROGRAM_ID = new PublicKey("77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6");
+const PROGRAM_ID = new PublicKey(import.meta.env.VITE_PROGRAM_ID);
 const RPC = "https://api.devnet.solana.com ";
 
 export class SolanaPublisher {
@@ -45,7 +45,7 @@ export class SolanaPublisher {
       PROGRAM_ID
     );
 
-    // Instrução Ed25519 nativa do Solana
+    // InstruÃ§Ã£o Ed25519 nativa do Solana
     const ed25519Ix = anchor.web3.Ed25519Program.createInstructionWithPublicKey({
       publicKey: pubBytes,
       message: hashBytes,
@@ -90,7 +90,8 @@ export class SolanaPublisher {
     try {
       return await this.program.account.assetRiskStatus.fetch(assetPDA);
     } catch (e) {
-      return null; // Não existe ainda
+      return null; // NÃ£o existe ainda
     }
   }
 }
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CATE - On-Chain Trust Layer Integration
  * 
  * Integrates with the Solana program for:
@@ -28,7 +28,7 @@ import idl from '@/idl/workspaceIDL.json';
 // CONSTANTS
 // ============================================
 
-export const PROGRAM_ID = '77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6';
+export const PROGRAM_ID = import.meta.env.VITE_PROGRAM_ID;
 export const NETWORK = 'devnet';
 export const RPC_ENDPOINT = 'https://api.devnet.solana.com';
 
@@ -365,3 +365,4 @@ export class OnChainTrustService {
 // ============================================
 
 export const onChainTrustService = new OnChainTrustService();
+
