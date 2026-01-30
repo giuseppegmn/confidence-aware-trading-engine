@@ -7,6 +7,9 @@ skip-lint = false
 [programs.localnet]
 workspace = "2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3"
 
+[programs.devnet]
+workspace = "2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3"
+
 [registry]
 url = "https://api.apr.dev"
 

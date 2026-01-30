@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::ed25519_program;
 use anchor_lang::solana_program::sysvar::instructions::{self, load_instruction_at_checked};
 
-declare_id!("77kRa7xJb2SQpPC1fdFGj8edzm5MJxhq2j54BxMWtPe6");
+declare_id!("2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3");
 
 /// Headers da instrução Ed25519
 const ED25519_SIG_LEN: usize = 64;
