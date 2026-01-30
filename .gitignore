@@ -1,38 +1,33 @@
-# ==============================
-# Node / Vite
-# ==============================
+﻿# Node / Package managers
 node_modules/
 dist/
-.vite/
-coverage/
-*.log
-logs/
+.pnpm-store/
 
-# ==============================
-# Env / Secrets
-# ==============================
+# Environment files
 .env
 .env.*
-!.env.example
+*.local
 
-# ==============================
-# OS / Editor
-# ==============================
+# Logs
+*.log
+
+# Backup / temp files
+*.bak
+*.backup
+*.backup.*
+*~
+
+# OS
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
 
-# ==============================
-# Solana / Anchor
-# ==============================
+# Anchor / Solana
 contracts/target/
 contracts/.anchor/
-contracts/test-ledger/
-contracts/.localnet/
+**/target/
+**/.anchor/
+**/Cargo.lock
 
-# Never commit wallets / keypairs
-**/*-keypair.json
-**/wallet.json
-**/*.pem
-**/*.key
+# IDEs
+.vscode/
+.idea/
