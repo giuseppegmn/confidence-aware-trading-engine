@@ -1,4 +1,4 @@
-Ôªøimport React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { requestRemoteSigning } from './crypto/signing'
 import { riskEngine } from './riskIntelligence'
 import { pythOracle, AssetSymbol } from './oracleReal'
@@ -11,7 +11,7 @@ export function useCATE() {
   return context
 }
 
-// Simulador de volatilidade - mant√©m hist√≥rico entre chamadas
+// Simulador de volatilidade - mantÈm histÛrico entre chamadas
 function createVolatilityTracker() {
   const prices = []
   const maxHistory = 20
@@ -78,10 +78,10 @@ export function CATEProvider({ children }) {
     setIsRunning(false)
     if (intervalRef.current) clearInterval(intervalRef.current)
     setLastDecision(null)
-    // N√£o reseta o volTracker para manter hist√≥rico
+    // N„o reseta o volTracker para manter histÛrico
   }, [])
 
-  // NOVO: Fun√ß√£o para trocar token e resetar tracker
+  // NOVO: FunÁ„o para trocar token e resetar tracker
   const changeAsset = useCallback((asset: AssetSymbol) => {
     setSelectedAsset(asset)
     volTrackerRef.current?.reset() // Reset volatilidade ao trocar token
@@ -127,7 +127,7 @@ export function CATEProvider({ children }) {
       // Chama risk engine
       const decision = riskEngine.evaluate(snapshot)
       
-      // Se for BLOCK, n√£o tenta assinar
+      // Se for BLOCK, n„o tenta assinar
       if (decision.action === 'BLOCK') {
         setLastDecision({
           ...decision,
@@ -179,7 +179,7 @@ export function CATEProvider({ children }) {
     signerKey,
     lastDecision,
     selectedAsset,      // NOVO: expor token selecionado
-    changeAsset,        // NOVO: fun√ß√£o para trocar token
+    changeAsset,        // NOVO: funÁ„o para trocar token
     startEngine,
     stopEngine,
     evaluateAndSign
