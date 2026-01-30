@@ -120,3 +120,17 @@ This score directly determines whether execution is:
 - or placed into a CAUTION zone.
 
 Uncertainty is treated as a first-class input.
+
+---
+
+## Execution Client (Paper Trading)
+
+CATE includes a real execution client operating in **paper trading mode**.
+
+The execution client:
+- Generates trade intents
+- Queries the CATE risk engine
+- Executes or skips trades based on ALLOW / BLOCK decisions
+- Logs all outcomes for auditability
+
+This demonstrates real-world execution gating without custody or capital risk.
