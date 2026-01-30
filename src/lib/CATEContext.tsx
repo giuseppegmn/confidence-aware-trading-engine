@@ -112,15 +112,12 @@ export function CATEProvider({ children }) {
           confidenceRatio: confidenceRatio,
           publishTime: priceData.publishTime,
           numPublishers: 5,
+          volatility24h: volatility // CORREÇÃO: Enviar volatilidade aqui!
         },
         volatility: {
           current: volatility,
           history: count,
           regime: volatility < 2 ? 'low' : volatility < 5 ? 'medium' : 'high'
-        },
-        circuitBreaker: {
-          isOpen: false,
-          reason: ''
         }
       }
 
@@ -132,7 +129,12 @@ export function CATEProvider({ children }) {
         setLastDecision({
           ...decision,
           timestamp: new Date().toISOString(),
-          signed: false
+          signed: false,
+          signature: null,
+          decisionHash: null,
+          signerPublicKey: null,
+          confidenceRatio: confidenceRatio,
+          sizeMultiplier: 0
         })
         return
       }
@@ -154,6 +156,9 @@ export function CATEProvider({ children }) {
       setLastDecision({
         ...decision,
         signature: signed.signature,
+        decisionHash: signed.decisionHash,
+        signerPublicKey: signed.signerPublicKey,
+        confidenceRatio: confidenceRatio,
         timestamp: new Date().toISOString(),
         signed: true
       })
@@ -163,23 +168,27 @@ export function CATEProvider({ children }) {
       setLastDecision({
         action: 'BLOCK',
         explanation: 'Error: ' + error.message,
-        riskScore: 100,
+        score: 100,
         timestamp: new Date().toISOString(),
-        signed: false
+        signed: false,
+        signature: null,
+        decisionHash: null,
+        signerPublicKey: null,
+        confidenceRatio: 0,
+        sizeMultiplier: 0,
+        volatility: 0
       })
     }
   }, [selectedAsset])
 
   const value = {
-    selectedAsset,
-    changeAsset,
     isRunning,
     isLoading,
     lastUpdate,
     signerKey,
     lastDecision,
-    selectedAsset,      // NOVO: expor token selecionado
-    changeAsset,        // NOVO: função para trocar token
+    selectedAsset,
+    changeAsset,
     startEngine,
     stopEngine,
     evaluateAndSign
@@ -191,4 +200,3 @@ export function CATEProvider({ children }) {
     </CATEContext.Provider>
   )
 }
-

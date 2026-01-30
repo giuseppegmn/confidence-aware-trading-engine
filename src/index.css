@@ -308,3 +308,29 @@
     }
   }
 }
+/* Forçar fundo branco na página toda */
+body {
+  background-color: #ffffff !important;
+  color: #333333 !important;
+  margin: 0;
+  padding: 0;
+}
+
+/* Garantir que o root também tenha fundo branco */
+#root {
+  background-color: #ffffff;
+  min-height: 100vh;
+}
+
+/* Override para elementos do wallet adapter não ficarem com texto cinza */
+.wallet-adapter-button {
+  color: #ffffff !important;
+}
+
+.wallet-adapter-modal-title {
+  color: #333333 !important;
+}
+
+.wallet-adapter-modal-content {
+  background-color: #ffffff !important;
+}
