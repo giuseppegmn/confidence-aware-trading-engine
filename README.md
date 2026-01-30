@@ -99,3 +99,32 @@ ENGINEERING NOTES
 LICENSE
 
 MIT
+
+============================================================
+
+PACKAGE MANAGER
+
+This project intentionally uses pnpm.
+
+Reason:
+- npm (v10+) is known to fail on this codebase due to upstream bugs
+- pnpm handles dependency resolution correctly for this repository
+
+REQUIRED:
+- pnpm >= 8.x
+
+DO NOT USE:
+- npm install
+- npm ci
+
+If you encounter install errors using npm, this is expected behavior.
+Switch to pnpm.
+
+Install pnpm:
+npm install -g pnpm
+
+Then run:
+pnpm install
+
+============================================================
+
