@@ -1,130 +1,97 @@
-﻿CATE — Confidence-Aware Trading Engine
+﻿# CATE — Confidence-Aware Trading Engine
 
-Production-grade risk-aware execution layer for DeFi trading.
-"Is this data statistically trustworthy enough to risk real capital?"
+## What CATE Is
 
-CATE is a deterministic risk intelligence system that evaluates oracle data quality before allowing trade execution. It consumes real-time price feeds (e.g., Pyth), calculates volatility and confidence metrics, cryptographically signs risk decisions, and provides a signed attestation that can be verified on-chain.
+CATE is a **risk-intelligence layer** for DeFi execution.
 
-============================================================
+It does **not** execute trades.
+It decides **whether a trade should be allowed to exist** based on the statistical quality of oracle data.
 
-WHAT CATE DOES
+CATE evaluates real-time oracle feeds (Pyth Network), analyzes confidence intervals and volatility, and produces a **deterministic ALLOW / BLOCK decision** before any capital is put at risk.
 
-- Ingests oracle price and confidence data
-- Computes confidence-aware risk signals (volatility, deviation, reliability)
-- Produces deterministic allow/deny decisions for execution
-- Emits and verifies on-chain attestations
+---
 
-============================================================
+## What CATE Is NOT
 
-REPO LAYOUT
+- ❌ Not a trading bot  
+- ❌ Not an AMM  
+- ❌ Not an oracle  
+- ❌ Not a yield optimizer  
 
-contracts/   -> Anchor (Solana) program  
-frontend/    -> UI / dashboards (if present)  
-services/    -> off-chain ingestion / analytics (if present)
+CATE does **not** chase yield.  
+CATE exists to **prevent bad trades caused by unreliable price data**.
 
-============================================================
+---
 
-REQUIREMENTS (WINDOWS)
+## The Core Problem
 
-- WSL (Ubuntu)
-- Rust toolchain
-- Solana CLI
-- Anchor
+In DeFi, most protocols treat oracle prices as truth.
 
-Docs:
-Solana CLI: https://solana.com/docs/intro/installation  
-Anchor: https://www.anchor-lang.com/docs/installation  
+However, oracle prices come with **uncertainty**:
+- Confidence intervals
+- Volatility spikes
+- Data dispersion
 
-============================================================
+Ignoring this uncertainty leads to:
+- Bad executions
+- Unnecessary liquidations
+- MEV amplification
+- Capital loss
 
-BUILD & TEST
+Most systems ask:
+> *“What is the price?”*
 
-Run from inside contracts/ :
+CATE asks:
+> **“Is this price statistically trustworthy enough to risk capital?”**
 
-cd contracts
-anchor build
-anchor test
+---
 
-============================================================
+## How CATE Works (High-Level)
 
-DEVNET DEPLOYMENT
+1. Consume real-time price feeds from Pyth Network
+2. Extract confidence interval and volatility signals
+3. Compute a deterministic risk decision
+4. Output a signed decision: **ALLOW or BLOCK**
 
-Cluster: Solana Devnet  
-Program ID: 2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3  
-IDL Account: fUTSexSZnRR5x7sJWHPyvHKX1bHMuUmjr6xEDMzpvJR  
+Execution systems can then decide whether to proceed.
 
-Explorer Program:
-https://explorer.solana.com/address/2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3?cluster=devnet
+---
 
-Explorer IDL:
-https://explorer.solana.com/address/fUTSexSZnRR5x7sJWHPyvHKX1bHMuUmjr6xEDMzpvJR?cluster=devnet
+## Execution Model
 
-============================================================
+CATE currently operates as an **off-chain execution gate**.
 
-VERIFY (CLI)
+Decisions can be:
+- Logged
+- Signed
+- Attested
+- Verified on-chain (optional)
 
-solana config set --url https://api.devnet.solana.com  
-solana program show 2CVGjnZ2BRebSeDHdo3VZknm5jVjxZmWu9m95M14sTN3  
-solana account fUTSexSZnRR5x7sJWHPyvHKX1bHMuUmjr6xEDMzpvJR  
+CATE intentionally separates **risk intelligence** from **execution logic**.
 
-============================================================
+---
 
-RPC SETUP (RECOMMENDED)
+## Why This Matters
 
-Public devnet RPC endpoints are unstable and may return 403 or rate-limit.
+In volatile or low-liquidity markets, the most profitable action is often:
+> **Not trading at all**
 
-Use a dedicated RPC provider such as:
-- Helius
-- QuickNode
-- Alchemy
-- Ankr
+CATE enforces that discipline programmatically.
 
-Example (PowerShell):
+---
 
- = https://devnet.helius-rpc.com/?api-key=YOUR_KEY  
-solana config set --url %SOLANA_RPC_URL%  
-anchor deploy --provider.cluster %SOLANA_RPC_URL%  
+## Project Status
 
-============================================================
+This repository represents a **functional prototype** designed for:
+- Hackathons
+- Research
+- Infrastructure experimentation
+- Oracle-aware execution systems
 
-ENGINEERING NOTES
+Production hardening and economic integration are future steps.
 
-- Anchor.toml, declare_id(), and keypair must always match.
-- Program ID and IDL account are deterministic and reproducible.
-- If you cannot reproduce a deploy from scratch, the project is not production-grade.
-- RPC instability is infrastructure, not a code problem.
+---
 
-============================================================
-
-LICENSE
+## License
 
 MIT
-
-============================================================
-
-PACKAGE MANAGER
-
-This project intentionally uses pnpm.
-
-Reason:
-- npm (v10+) is known to fail on this codebase due to upstream bugs
-- pnpm handles dependency resolution correctly for this repository
-
-REQUIRED:
-- pnpm >= 8.x
-
-DO NOT USE:
-- npm install
-- npm ci
-
-If you encounter install errors using npm, this is expected behavior.
-Switch to pnpm.
-
-Install pnpm:
-npm install -g pnpm
-
-Then run:
-pnpm install
-
-============================================================
-
