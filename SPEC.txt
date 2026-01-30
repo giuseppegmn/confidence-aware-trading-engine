@@ -1,28 +1,27 @@
-﻿CATE — Canonical Risk Rule (v0)
+﻿CATE — Signed Confidence Attestation Model (v1)
 
-INPUTS
-- price: oracle price (u64, normalized)
-- confidence: oracle confidence interval (u64)
-- last_update_slot: slot of last oracle update
-- current_slot: current slot
+ARCHITECTURE
+- Risk evaluation is performed OFF-CHAIN by a deterministic engine
+- On-chain program verifies authenticity, freshness, and replay safety
+- Decisions are accepted only if signed by a trusted authority
 
-DERIVED METRICS
-- relative_confidence = confidence / price
-- staleness = current_slot - last_update_slot
+ON-CHAIN RESPONSIBILITIES
+- Verify Ed25519 signatures via syscall
+- Enforce timestamp freshness
+- Prevent replay attacks via decision hash registry
+- Persist last known risk state per asset
 
-THRESHOLDS (constants)
-- MAX_RELATIVE_CONFIDENCE = 0.01   (1%)
-- MAX_STALENESS_SLOTS = 25
+OFF-CHAIN RESPONSIBILITIES
+- Ingest oracle data (price, confidence, publishers)
+- Compute confidence-aware risk score
+- Produce signed decision hash
 
-DECISION RULE
-ALLOW execution IF AND ONLY IF:
-- relative_confidence <= MAX_RELATIVE_CONFIDENCE
-- staleness <= MAX_STALENESS_SLOTS
+SECURITY MODEL
+- Single trusted signer (rotatable by authority)
+- Instruction-sysvar-based Ed25519 verification
+- Time-bounded validity window
 
-OUTPUT
-- decision: ALLOW | DENY
-- signed attestation containing:
-  - inputs
-  - derived metrics
-  - decision
-  - slot
+THIS PROGRAM DOES NOT:
+- Fetch oracle data
+- Compute confidence metrics
+- Execute trades
