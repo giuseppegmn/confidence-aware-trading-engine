@@ -1,5 +1,5 @@
 # CATE — Confidence-Aware Trading Engine
-
+```text
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solana](https://img.shields.io/badge/Solana-Devnet-purple)](https://solana.com)
 [![Pyth Network](https://img.shields.io/badge/Oracle-Pyth%20Network-blue)](https://pyth.network)
@@ -12,16 +12,16 @@ CATE is a deterministic risk intelligence system that evaluates oracle data qual
 ---
 
 ## 🏗️ Architecture Overview
-```text
+
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   React UI      │────▶│  CATE Context    │────▶│  Pyth Hermes    │
+│   React UI      │───▶│   CATE Context    │───▶│  Pyth Hermes    │
 │  (Port 5173)    │     │  (Risk Engine)   │     │  Oracle API     │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
          │                       │                          │
          │                       ▼                          │
-         │              ┌──────────────────┐               │
-         │              │ Volatility       │               │
-         └─────────────▶│ Tracker (20-period│◀──────────────┘
+         │              ┌──────────────────┐                │
+         │              │ Volatility       │                │
+         └────────────▶│ Tracker (20-period│◀──────────────┘
                         │ rolling window)  │
                         └──────────────────┘
                                  │
@@ -321,5 +321,6 @@ MIT License — see [LICENSE](LICENSE) file.
 ---
 
 **Disclaimer**: CATE is experimental software. Use at your own risk. Always audit code before handling real funds.
+
 
 
