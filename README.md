@@ -106,10 +106,10 @@ git clone https://github.com/giuseppegmn/confidence-aware-trading-engine.git
 cd confidence-aware-trading-engine  
 
 ### 2. Install Dependencies
-# Frontend  
+## Frontend  
 pnpm install  
 
-# Backend (signing API)  
+## Backend (signing API)  
 cd api-server  
 pnpm install  
 
@@ -321,3 +321,4 @@ MIT License — see [LICENSE](LICENSE) file.
 ---
 
 **Disclaimer**: CATE is experimental software. Use at your own risk. Always audit code before handling real funds.
+
