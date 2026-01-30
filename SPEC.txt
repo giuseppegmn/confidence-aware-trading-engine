@@ -1,0 +1,28 @@
+﻿CATE — Canonical Risk Rule (v0)
+
+INPUTS
+- price: oracle price (u64, normalized)
+- confidence: oracle confidence interval (u64)
+- last_update_slot: slot of last oracle update
+- current_slot: current slot
+
+DERIVED METRICS
+- relative_confidence = confidence / price
+- staleness = current_slot - last_update_slot
+
+THRESHOLDS (constants)
+- MAX_RELATIVE_CONFIDENCE = 0.01   (1%)
+- MAX_STALENESS_SLOTS = 25
+
+DECISION RULE
+ALLOW execution IF AND ONLY IF:
+- relative_confidence <= MAX_RELATIVE_CONFIDENCE
+- staleness <= MAX_STALENESS_SLOTS
+
+OUTPUT
+- decision: ALLOW | DENY
+- signed attestation containing:
+  - inputs
+  - derived metrics
+  - decision
+  - slot
