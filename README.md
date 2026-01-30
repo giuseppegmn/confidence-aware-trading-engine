@@ -8,20 +8,20 @@
 > *"Is this data statistically trustworthy enough to risk real capital?"*
 
 CATE is a deterministic risk intelligence system that evaluates oracle data quality before allowing trade execution. It consumes real-time price feeds from Pyth Network, calculates volatility and confidence metrics, cryptographically signs risk decisions, and provides a signed attestation that can be verified on-chain.
-
+```text
 ---
 
 ## 🏗️ Architecture Overview
 
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   React UI      │────▶│  CATE Context    │────▶│  Pyth Hermes    │
+│   React UI      │───▶│   CATE Context    │───▶│  Pyth Hermes    │
 │  (Port 5173)    │     │  (Risk Engine)   │     │  Oracle API     │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
          │                       │                          │
          │                       ▼                          │
-         │              ┌──────────────────┐               │
-         │              │ Volatility       │               │
-         └─────────────▶│ Tracker (20-period│◀──────────────┘
+         │              ┌──────────────────┐                │
+         │              │ Volatility       │                │
+         └────────────▶│ Tracker (20-period│◀──────────────┘
                         │ rolling window)  │
                         └──────────────────┘
                                  │
@@ -106,10 +106,10 @@ git clone https://github.com/giuseppegmn/confidence-aware-trading-engine.git
 cd confidence-aware-trading-engine  
 
 ### 2. Install Dependencies
-# Frontend  
+## Frontend  
 pnpm install  
 
-# Backend (signing API)  
+## Backend (signing API)  
 cd api-server  
 pnpm install  
 
@@ -321,3 +321,8 @@ MIT License — see [LICENSE](LICENSE) file.
 ---
 
 **Disclaimer**: CATE is experimental software. Use at your own risk. Always audit code before handling real funds.
+
+
+
+
+
