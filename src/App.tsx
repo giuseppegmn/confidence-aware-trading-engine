@@ -58,10 +58,10 @@ function App() {
         lastDecision.score,
         lastDecision.action === 'BLOCK',
         lastDecision.confidenceRatio,
-        5, // publisherCount
+        5,
         lastDecision.signature,
         lastDecision.decisionHash || 'hash_placeholder',
-        signerKey || 'key_placeholder',
+        lastDecision.signerPublicKey || signerKey || 'key_placeholder',
         Math.floor(Date.now() / 1000)
       )
 
@@ -97,55 +97,16 @@ function App() {
   const currentToken = TOKENS.find(t => t.symbol === selectedAsset) || TOKENS[0]
 
   return (
-    <div style={{padding: 20, backgroundColor: '#ffffff', minHeight: '100vh', fontFamily: 'Arial, sans-serif', maxWidth: '800px', margin: '0 auto'}}>
+    <div style={{padding: 20, fontFamily: 'Arial, sans-serif', maxWidth: '800px', margin: '0 auto', backgroundColor: '#ffffff', minHeight: '100vh'}}>
       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
         <div>
           <h1 style={{margin: 0}}>CATE Engine</h1>
           <p style={{color: '#666', margin: '5px 0 0 0'}}>Risk-Aware Trading with Volatility + Size Multiplier</p>
         </div>
-        <WalletMultiButton style={{background: '#512da8'}} />
+        <WalletMultiButton />
       </div>
 
-      {/* Token Selector */}
-      <div style={{
-        marginBottom: 20,
-        padding: 15,
-        background: '#f8f9fa',
-        borderRadius: 8,
-        border: '2px solid #e9ecef'
-      }}>
-        <h3 style={{marginTop: 0, marginBottom: 12, fontSize: '14px', color: '#495057'}}>
-          Select Asset
-        </h3>
-        <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
-          {TOKENS.map((token) => (
-            <button
-              key={token.symbol}
-              onClick={() => handleTokenChange(token.symbol)}
-              disabled={!isRunning || isEvaluating}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 20,
-                border: '2px solid ' + (selectedAsset === token.symbol ? token.color : '#dee2e6'),
-                background: selectedAsset === token.symbol ? token.color : 'white',
-                color: selectedAsset === token.symbol ? 'white' : '#495057',
-                cursor: !isRunning || isEvaluating ? 'not-allowed' : 'pointer',
-                opacity: !isRunning || isEvaluating ? 0.6 : 1,
-                fontWeight: 'bold',
-                fontSize: '13px',
-                transition: 'all 0.2s'
-              }}
-            >
-              {token.symbol}
-            </button>
-          ))}
-        </div>
-        <p style={{marginTop: 10, marginBottom: 0, fontSize: '12px', color: '#6c757d'}}>
-          Current: <strong>{currentToken.name}</strong> ({selectedAsset})
-        </p>
-      </div>
-
-      {/* System Status */}
+      {/* System Status - sempre visível */}
       <div style={{marginBottom: 20, padding: 15, background: '#f5f5f5', borderRadius: 8}}>
         <h3 style={{marginTop: 0}}>System Status</h3>
         <p>
@@ -164,7 +125,7 @@ function App() {
         {signerKey && <p style={{fontSize: '11px', color: '#999'}}>Signer: {signerKey.substring(0, 20)}...</p>}
       </div>
 
-      {/* Controls */}
+      {/* Controls - START/STOP */}
       <div style={{marginBottom: 20, display: 'flex', gap: 10}}>
         <button
           onClick={isRunning ? stopEngine : startEngine}
@@ -183,7 +144,48 @@ function App() {
         </button>
       </div>
 
-      {/* Risk Engine */}
+      {/* Token Selector - SÓ APARECE DEPOIS DE INICIAR */}
+      {isRunning && (
+        <div style={{
+          marginBottom: 20,
+          padding: 15,
+          background: '#f8f9fa',
+          borderRadius: 8,
+          border: '2px solid #e9ecef'
+        }}>
+          <h3 style={{marginTop: 0, marginBottom: 12, fontSize: '14px', color: '#495057'}}>
+            Select Asset
+          </h3>
+          <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+            {TOKENS.map((token) => (
+              <button
+                key={token.symbol}
+                onClick={() => handleTokenChange(token.symbol)}
+                disabled={isEvaluating}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 20,
+                  border: '2px solid ' + (selectedAsset === token.symbol ? token.color : '#dee2e6'),
+                  background: selectedAsset === token.symbol ? token.color : 'white',
+                  color: selectedAsset === token.symbol ? 'white' : '#495057',
+                  cursor: isEvaluating ? 'not-allowed' : 'pointer',
+                  opacity: isEvaluating ? 0.6 : 1,
+                  fontWeight: 'bold',
+                  fontSize: '13px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {token.symbol}
+              </button>
+            ))}
+          </div>
+          <p style={{marginTop: 10, marginBottom: 0, fontSize: '12px', color: '#6c757d'}}>
+            Current: <strong>{currentToken.name}</strong> ({selectedAsset})
+          </p>
+        </div>
+      )}
+
+      {/* Risk Engine - SÓ APARECE DEPOIS DE INICIAR */}
       {isRunning && (
         <div style={{padding: 20, background: '#e3f2fd', borderRadius: 8, border: '2px solid #2196F3'}}>
           <h3 style={{marginTop: 0, color: '#1976d2'}}>Advanced Risk Engine</h3>
@@ -295,7 +297,7 @@ function App() {
         </div>
       )}
 
-      {/* Legend */}
+      {/* Legend - sempre visível */}
       <div style={{marginTop: 30, padding: 15, background: '#fafafa', borderRadius: 8, fontSize: '12px'}}>
         <h4>Risk Engine Metrics</h4>
         <ul style={{paddingLeft: 20, lineHeight: '1.8'}}>
