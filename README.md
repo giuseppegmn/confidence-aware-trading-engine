@@ -1,12 +1,12 @@
 # CATE — Confidence-Aware Trading Engine
-```text
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solana](https://img.shields.io/badge/Solana-Devnet-purple)](https://solana.com)
 [![Pyth Network](https://img.shields.io/badge/Oracle-Pyth%20Network-blue)](https://pyth.network)
 
 > **Production-grade risk-aware execution layer for DeFi trading.**  
 > *"Is this data statistically trustworthy enough to risk real capital?"*
-
+```text
 CATE is a deterministic risk intelligence system that evaluates oracle data quality before allowing trade execution. It consumes real-time price feeds from Pyth Network, calculates volatility and confidence metrics, cryptographically signs risk decisions, and provides a signed attestation that can be verified on-chain.
 
 ---
@@ -321,6 +321,7 @@ MIT License — see [LICENSE](LICENSE) file.
 ---
 
 **Disclaimer**: CATE is experimental software. Use at your own risk. Always audit code before handling real funds.
+
 
 
 
