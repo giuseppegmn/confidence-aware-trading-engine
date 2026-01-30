@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+﻿import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { requestRemoteSigning } from './crypto/signing'
 import { riskEngine } from './riskIntelligence'
-import { pythOracle } from './oracleReal'
+import { pythOracle, AssetSymbol } from './oracleReal'
 
 const CATEContext = createContext(null)
 
@@ -11,11 +11,11 @@ export function useCATE() {
   return context
 }
 
-// Simulador de volatilidade - mant�m hist�rico entre chamadas
+// Simulador de volatilidade - mantém histórico entre chamadas
 function createVolatilityTracker() {
   const prices = []
   const maxHistory = 20
-  
+
   return {
     addPrice(price) {
       prices.push(price)
@@ -31,6 +31,9 @@ function createVolatilityTracker() {
     },
     getCount() {
       return prices.length
+    },
+    reset() {
+      prices.length = 0
     }
   }
 }
@@ -42,14 +45,17 @@ export function CATEProvider({ children }) {
   const [signerKey, setSignerKey] = useState(null)
   const [lastDecision, setLastDecision] = useState(null)
   
+  // NOVO: Estado para token selecionado
+  const [selectedAsset, setSelectedAsset] = useState<AssetSymbol>('SOL')
+
   // useRef para manter o tracker entre renders
   const volTrackerRef = useRef(null)
-  
+
   // Inicializa o tracker uma vez
   if (!volTrackerRef.current) {
     volTrackerRef.current = createVolatilityTracker()
   }
-  
+
   const intervalRef = useRef(null)
 
   useEffect(() => {
@@ -72,75 +78,111 @@ export function CATEProvider({ children }) {
     setIsRunning(false)
     if (intervalRef.current) clearInterval(intervalRef.current)
     setLastDecision(null)
-    // N�o reseta o volTracker para manter hist�rico
+    // Não reseta o volTracker para manter histórico
   }, [])
 
-  const evaluateAndSign = useCallback(async (assetId = 'SOL/USD') => {
+  // NOVO: Função para trocar token e resetar tracker
+  const changeAsset = useCallback((asset: AssetSymbol) => {
+    setSelectedAsset(asset)
+    volTrackerRef.current?.reset() // Reset volatilidade ao trocar token
+    setLastDecision(null)
+    console.log(`[CATE] Token changed to ${asset}`)
+  }, [])
+
+  const evaluateAndSign = useCallback(async () => {
     try {
-       // Busca dados REAIS da Pyth Network
-      console.log('[CATE] Fetching real Pyth data...')
-      const priceData = await pythOracle.getPrice('SOL')
+      // Busca dados REAIS da Pyth Network com token selecionado
+      console.log(`[CATE] Fetching ${selectedAsset} from Pyth...`)
+      const priceData = await pythOracle.getPrice(selectedAsset)
       
       const price = priceData.price
-      
+      const confidenceRatio = (priceData.confidence / priceData.price) * 100
+
       // Adiciona ao tracker (persistente!)
       volTrackerRef.current.addPrice(price)
       const volatility = volTrackerRef.current.getVolatility()
       const count = volTrackerRef.current.getCount()
-      
-      // Confidence aleat�rio
-      const confidenceRatio = (priceData.confidence / priceData.price) * 100
-      
-            console.log(`[CATE] Pyth Real - SOL: $${price.toFixed(2)} | Confidence: ${confidenceRatio.toFixed(2)}%`)
+
+      console.log(`[CATE] Pyth Real - ${selectedAsset}: $${price.toFixed(2)} | Confidence: ${confidenceRatio.toFixed(2)}% | Vol: ${volatility}%`)
+
       const snapshot = {
         price: {
-          id: assetId,
+          id: `${selectedAsset}/USD`,
           price: price,
           confidenceRatio: confidenceRatio,
-          publishTime: Math.floor(Date.now() / 1000) - 10,
+          publishTime: priceData.publishTime,
           numPublishers: 5,
-          volatility24h: volatility
+        },
+        volatility: {
+          current: volatility,
+          history: count,
+          regime: volatility < 2 ? 'low' : volatility < 5 ? 'medium' : 'high'
+        },
+        circuitBreaker: {
+          isOpen: false,
+          reason: ''
         }
       }
 
+      // Chama risk engine
       const decision = riskEngine.evaluate(snapshot)
-      setLastDecision(decision)
-
+      
+      // Se for BLOCK, não tenta assinar
       if (decision.action === 'BLOCK') {
-        return { blocked: true, decision }
+        setLastDecision({
+          ...decision,
+          timestamp: new Date().toISOString(),
+          signed: false
+        })
+        return
       }
 
-      const payload = {
-        assetId,
+      // Solicita assinatura ao backend
+      const signPayload = {
+        assetId: `${selectedAsset}/USD`,
         price: price,
         timestamp: Math.floor(Date.now() / 1000),
         confidenceRatio: Math.floor(confidenceRatio * 100),
         riskScore: decision.score,
-        isBlocked: false,
+        isBlocked: decision.action === 'BLOCK',
         publisherCount: 5,
-        nonce: Date.now()
+        nonce: Math.floor(Math.random() * 1000000)
       }
 
-      const signed = await requestRemoteSigning(payload)
-      return { signed, decision }
+      const signed = await requestRemoteSigning(signPayload)
+      
+      setLastDecision({
+        ...decision,
+        signature: signed.signature,
+        timestamp: new Date().toISOString(),
+        signed: true
+      })
 
     } catch (error) {
-      console.error('? Erro:', error)
-      throw error
+      console.error('[CATE] Evaluation error:', error)
+      setLastDecision({
+        action: 'BLOCK',
+        explanation: 'Error: ' + error.message,
+        riskScore: 100,
+        timestamp: new Date().toISOString(),
+        signed: false
+      })
     }
-  }, [])
+  }, [selectedAsset])
 
   const value = {
+    selectedAsset,
+    changeAsset,
     isRunning,
     isLoading,
     lastUpdate,
     signerKey,
     lastDecision,
+    selectedAsset,      // NOVO: expor token selecionado
+    changeAsset,        // NOVO: função para trocar token
     startEngine,
     stopEngine,
-    evaluateAndSign,
-    circuitStatus: { state: 'CLOSED', reason: '', failureCount: 0, isOpen: false },
-    metrics: {}
+    evaluateAndSign
   }
 
   return (
@@ -150,14 +192,3 @@ export function CATEProvider({ children }) {
   )
 }
 
-export function useCircuitBreaker() {
-  return { state: 'CLOSED', reason: '', failureCount: 0, isOpen: false }
-}
-
-export function useSelectedAsset() {
-  return { assetId: null, setSelectedAsset: () => {}, asset: null }
-}
-
-export function useSystemMetrics() {
-  return { totalDecisions: 0, blockedTrades: 0, executedTrades: 0, oracleStatus: 'CONNECTED', lastUpdate: Date.now() }
-}
