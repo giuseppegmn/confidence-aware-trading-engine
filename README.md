@@ -106,3 +106,17 @@ For a detailed explanation of the execution and trust model, see:
 - OFFCHAIN_MODEL.md
 
 This separation allows CATE to remain flexible, auditable, and execution-agnostic.
+
+---
+
+## Risk Scoring
+
+CATE computes an explicit **risk score (0–100)** driven primarily
+by oracle confidence intervals and short-term volatility.
+
+This score directly determines whether execution is:
+- ALLOW
+- BLOCK
+- or placed into a CAUTION zone.
+
+Uncertainty is treated as a first-class input.
