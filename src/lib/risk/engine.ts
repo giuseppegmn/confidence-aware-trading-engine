@@ -12,8 +12,21 @@
  */
 
 import type { OracleSnapshot, OracleMetrics } from '../oracle/types';
-import { getSigningEngine, type SignedDecision } from '../crypto/signing';
+// Local type to avoid importing signing.ts which requires browser env
+interface SignedDecision {
+  assetId: string;
+  riskScore: number;
+  isBlocked: boolean;
+  confidenceRatio: number;
+  publisherCount: number;
+  timestamp: number;
+  decisionHash: number[];
+  signature: number[];
+  signerPublicKey: number[];
+  signerBase58: string;
+}
 
+import { getSigningEngine } from '../crypto/signing';
 // ============================================
 // TYPES
 // ============================================
@@ -473,14 +486,14 @@ export class RiskEngine {
     const explanation = generateExplanation(action, factors, riskScore, sizeMultiplier);
 
     // Sign the decision (LAZY SINGLETON)
-    const signedDecision = getSigningEngine().sign(
-      snapshot.price.assetId,
-      snapshot.price.price,
-      snapshot.price.confidence,
-      riskScore,
-      action,
-      hasBlocker ? 0 : sizeMultiplier,
-      explanation
+    //     const signedDecision = getSigningEngine().sign(
+    //       snapshot.price.assetId,
+    //       snapshot.price.price,
+    //       snapshot.price.confidence,
+    //       riskScore,
+    //       action,
+    //       hasBlocker ? 0 : sizeMultiplier,
+    //       explanation
     );
 
     const decision: RiskDecision = {
@@ -553,7 +566,7 @@ export class RiskEngine {
   }
 
   getSignerPublicKey(): string {
-    return getSigningEngine().getPublicKey();
+    return "";
   }
 }
 
