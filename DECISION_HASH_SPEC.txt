@@ -1,0 +1,50 @@
+﻿CATE — Decision Hash Specification (v1)
+
+PURPOSE
+The decision_hash uniquely represents a signed risk decision.
+Any change to inputs MUST change the hash.
+
+ENCODING
+- All numeric values are little-endian
+- Strings are UTF-8, fixed-length or padded
+- Hash algorithm: SHA-256
+
+FIELDS (IN ORDER)
+
+1. asset_id
+   - type: bytes[16]
+   - UTF-8 string, right-padded with zeros
+
+2. risk_score
+   - type: u8
+   - range: 0–100
+
+3. is_blocked
+   - type: u8
+   - 0 = allow, 1 = block
+
+4. confidence_ratio
+   - type: u64
+   - basis points (1% = 100)
+
+5. publisher_count
+   - type: u8
+
+6. timestamp
+   - type: i64
+   - unix timestamp (seconds)
+
+7. program_id
+   - type: bytes[32]
+   - Solana program id anchoring this decision
+
+SERIALIZATION
+The fields are concatenated in the exact order above with no separators.
+
+HASH
+decision_hash = SHA256(serialized_bytes)
+
+SECURITY NOTES
+- program_id binding prevents cross-program replay
+- timestamp enforces freshness window
+- asset_id padding is deterministic
