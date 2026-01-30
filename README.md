@@ -95,3 +95,14 @@ Production hardening and economic integration are future steps.
 ## License
 
 MIT
+
+---
+
+## Off-Chain Design Rationale
+
+CATE is intentionally designed as an **off-chain risk-intelligence system**.
+
+For a detailed explanation of the execution and trust model, see:
+- OFFCHAIN_MODEL.md
+
+This separation allows CATE to remain flexible, auditable, and execution-agnostic.
